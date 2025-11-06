@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
       const config = DATASETS[dataset];
       
       // 4-1. 필수 파라미터 검증
-      const required = config.requiredParams ?? [];
+      const required = (config as DatasetConfig).requiredParams ?? [];
       const missing = required.filter((param) => {
         const value = searchParams.get(param);
         return value === null || value.trim().length === 0;
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
       };
 
       // 4-3. 주택/공고 조건 처리
-      if (config.useHousePblancCond) {
+      if ((config as DatasetConfig).useHousePblancCond) {
         const houseManageNo = searchParams.get("houseManageNo");
         const pblancNo = searchParams.get("pblancNo");
         
@@ -196,22 +196,22 @@ export async function GET(req: NextRequest) {
       }
 
       // 4-5. 페이지네이션 처리
-      const pagingMode = config.pagingMode ?? "default";
+      const pagingMode = (config as DatasetConfig).pagingMode ?? "default";
       if (pagingMode === "page") {
         datasetParams.page = pageNo ?? 1;
-        datasetParams.perPage = numOfRows ?? config.defaultPerPage ?? 10;
+        datasetParams.perPage = numOfRows ?? (config as DatasetConfig).defaultPerPage ?? 10;
       }
       
-      if (config.includePaging !== false && pagingMode !== "page") {
+      if ((config as DatasetConfig).includePaging !== false && pagingMode !== "page") {
         datasetParams.pageNo = pageNo ?? 1;
         datasetParams.numOfRows = numOfRows ?? 10;
       }
 
       // 4-6. API 호출
       const response = await fetchRebData(
-        config.endpoint,
+        (config as DatasetConfig).endpoint,
         datasetParams,
-        { service: config.service, includePaging: config.includePaging !== false }
+        { service: (config as DatasetConfig).service, includePaging: (config as DatasetConfig).includePaging !== false }
       );
 
       // 4-7. 메타데이터 추출

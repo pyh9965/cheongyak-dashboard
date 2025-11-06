@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { buildApplicationRows, type NoticeModelApiRow, type NoticeCompetitionApiRow, type NoticeSpecialApiRow } from "@/lib/detail-data";
 import { formatNumber, formatPriceTenThousand, formatRate, formatDifference, formatSpecialRequestEntries, formatValue } from "@/lib/detail-utils";
@@ -39,6 +39,14 @@ type ApiResponse = {
 };
 
 export default function APTPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: "40px", textAlign: "center" }}>로딩 중...</div>}>
+      <APTPageContent />
+    </Suspense>
+  );
+}
+
+function APTPageContent() {
   const urlSearchParams = useSearchParams();
   
   // 기본 날짜 설정: 5년 전부터 현재까지
@@ -184,6 +192,8 @@ export default function APTPage() {
             // 첫 페이지에서 200개를 가져왔으므로, 필터링된 개수가 전체 개수
             setMetadata({
               ...originalMetadata,
+              page: originalMetadata?.page ?? 1,
+              perPage: originalMetadata?.perPage ?? 200,
               currentCount: filteredData.length,
               totalCount: filteredData.length,
             });
@@ -191,7 +201,10 @@ export default function APTPage() {
             // 다른 페이지에서는 원본 메타데이터 사용 (정확한 개수는 첫 페이지에서 계산됨)
             setMetadata({
               ...originalMetadata,
+              page: originalMetadata?.page ?? 1,
+              perPage: originalMetadata?.perPage ?? 10,
               currentCount: filteredData.length,
+              totalCount: originalMetadata?.totalCount ?? filteredData.length,
             });
           }
         } else {
@@ -918,7 +931,7 @@ function DetailModal({
             return null;
           }
           usedKeys.add(key);
-          return { key, label, value };
+          return { key, label, value } as { key: string; label: string; value: unknown };
         })
         .filter((item): item is { key: string; label: string; value: unknown } => item !== null);
       return { title, items };

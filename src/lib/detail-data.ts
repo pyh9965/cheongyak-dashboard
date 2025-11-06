@@ -223,7 +223,7 @@ export function buildApplicationRows(
 
   // 3. 모델 데이터를 기반으로 행 생성
   const rows: ApplicationRow[] = models
-    .map((model) => {
+    .map((model): ApplicationRow | null => {
       const modelNo = String(model.MODEL_NO ?? model.HOUSE_TY ?? "").trim();
       if (!modelNo) return null;
 
