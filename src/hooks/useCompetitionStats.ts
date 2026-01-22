@@ -7,6 +7,7 @@
 
 import { useMemo } from 'react';
 import type { CacheData, CompetitionStatsResult } from './types';
+import { getCompetitionStagesSync } from './utils';
 
 /**
  * 경쟁률 통계 데이터를 조회합니다.
@@ -33,39 +34,23 @@ export function useCompetitionStats(
   archiveCache: CacheData | null
 ): CompetitionStatsResult {
   return useMemo(() => {
-    // Priority 1: extraData (상세 경쟁률 데이터 - target/request 포함)
-    const extraStats = extraData[key]?.totals?.stages;
+    const stages = getCompetitionStagesSync(key, extraData, archiveCache);
 
-    if (
-      extraStats &&
-      extraStats.total?.rate !== null &&
-      extraStats.total?.rate !== undefined
-    ) {
+    // Determine data source
+    if (stages) {
+      const hasExtraData =
+        extraData[key]?.totals?.stages?.total?.rate !== null &&
+        extraData[key]?.totals?.stages?.total?.rate !== undefined;
+
       return {
-        stages: extraStats,
-        source: 'extraData' as const,
+        stages,
+        source: hasExtraData ? ('extraData' as const) : ('archiveCache' as const),
         hasData: true,
       };
     }
 
-    // Priority 2: archiveCache (캐시된 통계 - fallback)
-    const archiveStats = archiveCache?.calculatedStats?.[key]?.totals?.stages;
-
-    if (
-      archiveStats &&
-      archiveStats.total?.rate !== null &&
-      archiveStats.total?.rate !== undefined
-    ) {
-      return {
-        stages: archiveStats,
-        source: 'archiveCache' as const,
-        hasData: true,
-      };
-    }
-
-    // No valid data available
     return {
-      stages: extraStats || archiveStats || null,
+      stages: null,
       source: 'none' as const,
       hasData: false,
     };

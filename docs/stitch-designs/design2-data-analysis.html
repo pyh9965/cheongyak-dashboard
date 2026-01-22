@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+
+<html class="light" lang="ko">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>청약 분석 - 데이터 중심 대시보드</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#14b8a5",
+                        "sidebar-navy": "#1e293b",
+                        "background-light": "#f6f8f8",
+                        "background-dark": "#11211f",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', 'Pretendard', sans-serif;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+
+<body class="bg-background-light font-display text-slate-900 h-screen overflow-hidden flex">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-sidebar-navy text-white flex flex-col shrink-0 h-full">
+        <div class="p-6 flex items-center gap-3">
+            <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
+                <span class="material-symbols-outlined">apartment</span>
+            </div>
+            <h1 class="text-xl font-bold">청약 분석</h1>
+        </div>
+
+        <nav class="flex-1 px-4">
+            <ul class="space-y-1">
+                <li>
+                    <a href="#"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/20 text-primary font-medium">
+                        <span class="material-symbols-outlined">search</span>
+                        주택 조회
+                    </a>
+                </li>
+                <li>
+                    <a href="#"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-700/50 hover:text-white transition">
+                        <span class="material-symbols-outlined">trending_up</span>
+                        경쟁률 분석
+                    </a>
+                </li>
+                <li>
+                    <a href="#"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-700/50 hover:text-white transition">
+                        <span class="material-symbols-outlined">map</span>
+                        지역별 현황
+                    </a>
+                </li>
+                <li>
+                    <a href="#"
+                        class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-slate-700/50 hover:text-white transition">
+                        <span class="material-symbols-outlined">bar_chart</span>
+                        통계 리포트
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <div class="p-4 border-t border-slate-700">
+            <div class="flex items-center gap-3 px-4 py-3">
+                <div class="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center">
+                    <span class="material-symbols-outlined text-sm">person</span>
+                </div>
+                <div>
+                    <p class="text-sm font-medium">분석 전문가</p>
+                    <p class="text-xs text-slate-400">Pro Account</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-auto p-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">전체 주택 수</p>
+                        <p class="text-3xl font-bold text-slate-900 mt-1">2,638<span class="text-lg">건</span></p>
+                        <p class="text-xs text-green-600 mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">trending_up</span>
+                            +2.3% 전월대비
+                        </p>
+                    </div>
+                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <span class="material-symbols-outlined text-blue-600">home</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">평균 경쟁률</p>
+                        <p class="text-3xl font-bold text-slate-900 mt-1">45.2<span class="text-lg">:1</span></p>
+                        <p class="text-xs text-green-600 mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">trending_up</span>
+                            +0.5% 전월대비
+                        </p>
+                    </div>
+                    <div class="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                        <span class="material-symbols-outlined text-emerald-600">speed</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">최고 경쟁률</p>
+                        <p class="text-3xl font-bold text-slate-900 mt-1">892<span class="text-lg">:1</span></p>
+                        <p class="text-xs text-slate-500 mt-1">역삼센트럴자이</p>
+                    </div>
+                    <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                        <span class="material-symbols-outlined text-red-600">local_fire_department</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">청약 접수중</p>
+                        <p class="text-3xl font-bold text-primary mt-1">15<span class="text-lg">건</span></p>
+                        <p class="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">schedule</span>
+                            오늘 마감 3건
+                        </p>
+                    </div>
+                    <div class="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
+                        <span class="material-symbols-outlined text-primary">edit_document</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 mb-6 flex items-center gap-4">
+            <select class="rounded-lg border-slate-200 text-sm py-2">
+                <option>전체 기간</option>
+                <option>최근 1개월</option>
+                <option>최근 3개월</option>
+                <option>최근 1년</option>
+            </select>
+            <select class="rounded-lg border-slate-200 text-sm py-2">
+                <option>전체 지역</option>
+                <option>서울</option>
+                <option>경기</option>
+                <option>인천</option>
+            </select>
+            <select class="rounded-lg border-slate-200 text-sm py-2">
+                <option>주택구분</option>
+                <option>아파트</option>
+                <option>오피스텔</option>
+            </select>
+            <div class="flex-1 relative">
+                <span
+                    class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">search</span>
+                <input type="text" placeholder="아파트명, 시공사 검색..."
+                    class="w-full pl-10 pr-4 py-2 rounded-lg border-slate-200 text-sm">
+            </div>
+            <button
+                class="bg-primary text-white px-6 py-2 rounded-lg font-medium hover:bg-primary/90 transition flex items-center gap-2">
+                <span class="material-symbols-outlined text-sm">search</span>
+                조회
+            </button>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="flex gap-6">
+            <!-- Left: Table -->
+            <section class="flex-1 bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 class="font-semibold text-slate-800">최신 청약 리스트</h3>
+                    <button class="text-sm text-primary font-medium hover:underline">전체보기 →</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 text-xs text-slate-500 uppercase">
+                            <tr>
+                                <th class="px-5 py-3 text-left font-medium">주택명</th>
+                                <th class="px-5 py-3 text-left font-medium">지역</th>
+                                <th class="px-5 py-3 text-left font-medium">청약기간</th>
+                                <th class="px-5 py-3 text-left font-medium">경쟁률</th>
+                                <th class="px-5 py-3 text-left font-medium">상태</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr class="hover:bg-slate-50 transition cursor-pointer">
+                                <td class="px-5 py-4 font-medium text-slate-800">레이블 자이 마스트힐지</td>
+                                <td class="px-5 py-4 text-slate-600">서울 서초구</td>
+                                <td class="px-5 py-4 text-slate-600">2024.03.07 ~ 03.14</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-red-500 rounded-full" style="width: 95%"></div>
+                                        </div>
+                                        <span class="font-bold text-red-600">442.3:7</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span
+                                        class="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">접수중</span>
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 transition cursor-pointer">
+                                <td class="px-5 py-4 font-medium text-slate-800">힐스 테크노벨리 8단지</td>
+                                <td class="px-5 py-4 text-slate-600">경기 성남시</td>
+                                <td class="px-5 py-4 text-slate-600">2024.03.10 ~ 03.12</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-blue-500 rounded-full" style="width: 60%"></div>
+                                        </div>
+                                        <span class="font-bold text-blue-600">125.1:1</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span
+                                        class="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">접수중</span>
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 transition cursor-pointer">
+                                <td class="px-5 py-4 font-medium text-slate-800">송도 오션뷰크 포레스트</td>
+                                <td class="px-5 py-4 text-slate-600">인천 연수구</td>
+                                <td class="px-5 py-4 text-slate-600">2024.03.01 ~ 03.13</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-blue-400 rounded-full" style="width: 25%"></div>
+                                        </div>
+                                        <span class="font-bold text-blue-500">12.5:1</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span
+                                        class="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">마감</span>
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 transition cursor-pointer">
+                                <td class="px-5 py-4 font-medium text-slate-800">해운대 라클래스 테라스</td>
+                                <td class="px-5 py-4 text-slate-600">부산 해운대구</td>
+                                <td class="px-5 py-4 text-slate-600">2024.03.05 ~ 03.07</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-orange-500 rounded-full" style="width: 80%"></div>
+                                        </div>
+                                        <span class="font-bold text-orange-600">85.4:1</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span
+                                        class="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">마감</span>
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 transition cursor-pointer">
+                                <td class="px-5 py-4 font-medium text-slate-800">청담 에버 시크UNIT</td>
+                                <td class="px-5 py-4 text-slate-600">경기 광명시</td>
+                                <td class="px-5 py-4 text-slate-600">2024.03.12 ~ 03.15</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-red-400 rounded-full" style="width: 88%"></div>
+                                        </div>
+                                        <span class="font-bold text-red-500">245.7:1</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span
+                                        class="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">예정</span>
+                                </td>
+                            </tr>
+                            <tr class="hover:bg-slate-50 transition cursor-pointer">
+                                <td class="px-5 py-4 font-medium text-slate-800">대구 수성 레이크폴리스</td>
+                                <td class="px-5 py-4 text-slate-600">대구 수성구</td>
+                                <td class="px-5 py-4 text-slate-600">2024.02.28 ~ 03.02</td>
+                                <td class="px-5 py-4">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div class="h-full bg-blue-300 rounded-full" style="width: 15%"></div>
+                                        </div>
+                                        <span class="font-bold text-blue-400">5.2:1</span>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <span
+                                        class="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">마감</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Right: Charts Panel -->
+            <section class="w-80 space-y-4">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-100">
+                    <h4 class="font-semibold text-slate-800 mb-4 flex items-center justify-between">
+                        지역별 평균 경쟁률
+                        <button class="text-xs text-primary">상세 →</button>
+                    </h4>
+
+                    <div class="space-y-3">
+                        <div>
+                            <div class="flex justify-between text-xs font-medium mb-1">
+                                <span class="text-slate-600">서울</span>
+                                <span class="text-slate-900">142.5:1</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-primary h-full rounded-full" style="width: 95%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs font-medium mb-1">
+                                <span class="text-slate-600">경기</span>
+                                <span class="text-slate-900">78.3:1</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-primary/80 h-full rounded-full" style="width: 75%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs font-medium mb-1">
+                                <span class="text-slate-600">인천</span>
+                                <span class="text-slate-900">45.0:1</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-primary/60 h-full rounded-full" style="width: 50%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs font-medium mb-1">
+                                <span class="text-slate-600">부산</span>
+                                <span class="text-slate-900">38.4:1</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-primary/50 h-full rounded-full" style="width: 40%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs font-medium mb-1">
+                                <span class="text-slate-600">대구</span>
+                                <span class="text-slate-900">22.1:1</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-primary/40 h-full rounded-full" style="width: 25%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs font-medium mb-1">
+                                <span class="text-slate-600">기타</span>
+                                <span class="text-slate-900">18.4:1</span>
+                            </div>
+                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div class="bg-primary/20 h-full rounded-full" style="width: 15%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map Preview -->
+                <div class="bg-slate-900 p-6 rounded-xl relative overflow-hidden h-40">
+                    <div class="absolute inset-0 opacity-40 bg-gradient-to-br from-primary/30 to-transparent"></div>
+                    <div class="relative z-10">
+                        <h4 class="text-white font-bold mb-1">지역별 트렌드 지도</h4>
+                        <p class="text-slate-400 text-xs mb-4 leading-relaxed">수도권 과밀 현상 심화,<br />상급지 위주 선별 청약 뚜렷</p>
+                        <button
+                            class="text-xs font-bold text-white bg-primary px-3 py-1.5 rounded uppercase tracking-tight">View
+                            Live Map</button>
+                    </div>
+                </div>
+
+                <!-- Insight Note -->
+                <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                    <p class="text-xs font-bold text-emerald-600 mb-1 flex items-center gap-1">
+                        <span class="material-symbols-outlined text-sm">lightbulb</span>
+                        전문가 분석 노트
+                    </p>
+                    <p class="text-xs text-slate-600 leading-normal">
+                        금리 변동성이 축소됨에 따라 서초, 강남 등 핵심 입지의 경쟁률이 전월 대비 15% 이상 급상승하고 있습니다.
+                    </p>
+                </div>
+            </section>
+        </div>
+    </main>
+
+</body>
+
+</html>

@@ -21,3 +21,6 @@ export * from './types';
 export { useCompetitionStats } from './useCompetitionStats';
 export { useRateSelector } from './useRateSelector';
 export { useWeightedAverage } from './useWeightedAverage';
+
+// Utility exports
+export { getCompetitionStagesSync } from './utils';

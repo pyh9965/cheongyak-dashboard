@@ -17,7 +17,8 @@
       "Bash(ping:*)",
       "Bash(tasklist:*)",
       "Bash(powershell -command \"\\(Get-Item ''data\\\\cheongyak-archive.json''\\).Length / 1MB\")",
-      "Bash(powershell -command:*)"
+      "Bash(powershell -command:*)",
+      "Bash(git remote add:*)"
     ]
   }
 }

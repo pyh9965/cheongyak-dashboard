@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import styles from "./CompetitionTable.module.css";
 import { AptInfo, CacheData, CachedStats } from "@/lib/cache-loader";
+import { getCompetitionStagesSync } from "@/hooks";
 
 type SortDirection = "asc" | "desc";
 type SortColumn =
@@ -65,23 +66,10 @@ export default function CompetitionTable({
     const itemsPerPage = 50;
 
     // 경쟁률 데이터 가져오기
-    // extraData(상세 캐시)를 우선 사용 - archiveCache는 rate가 null일 수 있음
+    // getCompetitionStagesSync 헬퍼 함수 사용 (중복 로직 제거)
     const getStats = (item: AptInfo) => {
         const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-
-        // extraData 우선 사용 (상세 경쟁률 데이터)
-        const extraStats = extraData[key]?.totals?.stages;
-        if (extraStats && extraStats.total?.rate !== null && extraStats.total?.rate !== undefined) {
-            return extraStats;
-        }
-
-        // fallback: archiveCache
-        const archiveStats = archiveCache?.calculatedStats?.[key]?.totals?.stages;
-        if (archiveStats && archiveStats.total?.rate !== null && archiveStats.total?.rate !== undefined) {
-            return archiveStats;
-        }
-
-        return extraStats || archiveStats || null;
+        return getCompetitionStagesSync(key, extraData, archiveCache);
     };
 
     // 정렬된 데이터
