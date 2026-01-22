@@ -1,0 +1,155 @@
+[dotenv@17.2.3] injecting env (1) from .env -- tip: ?숋툘  specify custom .env file path with { path: '/custom/path/.env' }
+
+?? 泥?빟??API ?곌껐 ?뚯뒪???쒖옉
+?뱦 ?뚯뒪????? ??궪?쇳듃?댁옄??(2025000566)
+
+
+============================================================
+?뱻 ?뚯뒪?? 紐⑤뜽 ?뺣낫 (??낅퀎 怨듦툒 ?몃?)
+============================================================
+
+?뱦 URL: https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancMdl?serviceKey=70411bb72109c3a...
+
+?뱤 HTTP ?곹깭: 200 OK
+
+?뱥 ?묐떟 肄붾뱶: undefined
+?뱥 ?곗씠??媛쒖닔: 6媛??뱥 ?꾩껜 嫄댁닔: 13397
+?뱥 ?꾩옱 嫄댁닔: 6
+
+?벀 泥?踰덉㎏ ?곗씠???섑뵆:
+   - ?꾨뱶 媛쒖닔: 17媛?   - ?꾨뱶 紐⑸줉: ETC_HSHLDCO, HOUSE_MANAGE_NO, HOUSE_TY, INSTT_RECOMEND_HSHLDCO, LFE_FRST_HSHLDCO, LTTOT_TOP_AMOUNT, MNYCH_HSHLDCO, MODEL_NO, NWBB_HSHLDCO, NWWDS_HSHLDCO, OLD_PARNTS_SUPORT_HSHLDCO, PBLANC_NO, SPSPLY_HSHLDCO, SUPLY_AR, SUPLY_HSHLDCO, TRANSR_INSTT_ENFSN_HSHLDCO, YGMN_HSHLDCO
+
+   ?뱷 ?곸꽭 媛?
+      ETC_HSHLDCO: 0
+      HOUSE_MANAGE_NO: 2025000566
+      HOUSE_TY: 059.9800 
+      INSTT_RECOMEND_HSHLDCO: 1
+      LFE_FRST_HSHLDCO: 1
+      LTTOT_TOP_AMOUNT: 201200
+      MNYCH_HSHLDCO: 0
+      MODEL_NO: 01
+      NWBB_HSHLDCO: 0
+      NWWDS_HSHLDCO: 2
+      OLD_PARNTS_SUPORT_HSHLDCO: 0
+      PBLANC_NO: 2025000566
+      SPSPLY_HSHLDCO: 4
+      SUPLY_AR: 77.8807
+      SUPLY_HSHLDCO: 6
+      TRANSR_INSTT_ENFSN_HSHLDCO: 0
+      YGMN_HSHLDCO: 0
+
+============================================================
+?뱻 ?뚯뒪?? 寃쎌웳瑜?(1?쒖쐞/2?쒖쐞 ?묒닔 ?꾪솴)
+============================================================
+
+?뱦 URL: https://api.odcloud.kr/api/ApplyhomeInfoCmpetRtSvc/v1/getAPTLttotPblancCmpet?serviceKey=70411bb72109...
+
+?뱤 HTTP ?곹깭: 200 OK
+
+?뱥 ?묐떟 肄붾뱶: undefined
+?뱥 ?곗씠??媛쒖닔: 24媛??뱥 ?꾩껜 嫄댁닔: 49866
+?뱥 ?꾩옱 嫄댁닔: 24
+
+?벀 泥?踰덉㎏ ?곗씠???섑뵆:
+   - ?꾨뱶 媛쒖닔: 10媛?   - ?꾨뱶 紐⑸줉: CMPET_RATE, HOUSE_MANAGE_NO, HOUSE_TY, MODEL_NO, PBLANC_NO, REQ_CNT, RESIDE_SECD, RESIDE_SENM, SUBSCRPT_RANK_CODE, SUPLY_HSHLDCO
+
+   ?뱷 ?곸꽭 媛?
+      CMPET_RATE: 1692.33
+      HOUSE_MANAGE_NO: 2025000566
+      HOUSE_TY: 059.9800 
+      MODEL_NO: 01
+      PBLANC_NO: 2025000566
+      REQ_CNT: 10154
+      RESIDE_SECD: 01
+      RESIDE_SENM: ?대떦吏??      SUBSCRPT_RANK_CODE: 1
+      SUPLY_HSHLDCO: 6
+
+============================================================
+?뱻 ?뚯뒪?? ?밸퀎怨듦툒 ?묒닔 ?꾪솴
+============================================================
+
+?뱦 URL: https://api.odcloud.kr/api/ApplyhomeInfoCmpetRtSvc/v1/getAPTSpsplyReqstStus?serviceKey=70411bb72109c...
+
+?뱤 HTTP ?곹깭: 200 OK
+
+?뱥 ?묐떟 肄붾뱶: undefined
+?뱥 ?곗씠??媛쒖닔: 6媛??뱥 ?꾩껜 嫄댁닔: 11169
+?뱥 ?꾩옱 嫄댁닔: 6
+
+?벀 泥?踰덉㎏ ?곗씠???섑뵆:
+   - ?꾨뱶 媛쒖닔: 34媛?   - ?꾨뱶 紐⑸줉: CRSPAREA_LFE_FRST_CNT, CRSPAREA_MNYCH_CNT, CRSPAREA_NWBB_NWBBSHR_CNT, CRSPAREA_NWWDS_NMTW_CNT, CRSPAREA_OPS_CNT, CRSPAREA_YGMN_CNT, CTPRVN_LFE_FRST_CNT, CTPRVN_MNYCH_CNT, CTPRVN_NWBB_NWBBSHR_CNT, CTPRVN_NWWDS_NMTW_CNT, CTPRVN_OPS_CNT, CTPRVN_YGMN_CNT, ETC_AREA_LFE_FRST_CNT, ETC_AREA_MNYCH_CNT, ETC_AREA_NWBB_NWBBSHR_CNT, ETC_AREA_NWWDS_NMTW_CNT, ETC_AREA_OPS_CNT, ETC_AREA_YGMN_CNT, HOUSE_MANAGE_NO, HOUSE_TY, INSTT_RECOMEND_DCSN_CNT, INSTT_RECOMEND_HSHLDCO, INSTT_RECOMEND_PREPAR_CNT, LFE_FRST_HSHLDCO, MNYCH_HSHLDCO, NWBB_NWBBSHR_HSHLDCO, NWWDS_NMTW_HSHLDCO, OLD_PARNTS_SUPORT_HSHLDCO, PBLANC_NO, SPSPLY_HSHLDCO, SUBSCRPT_RESULT_NM, TRANSR_INSTT_ENFSN_CNT, TRANSR_INSTT_ENFSN_HSHLDCO, YGMN_HSHLDCO
+
+   ?뱷 ?곸꽭 媛?
+      CRSPAREA_LFE_FRST_CNT: 3431
+      CRSPAREA_MNYCH_CNT: 0
+      CRSPAREA_NWBB_NWBBSHR_CNT: 0
+      CRSPAREA_NWWDS_NMTW_CNT: 1692
+      CRSPAREA_OPS_CNT: 0
+      CRSPAREA_YGMN_CNT: 0
+      CTPRVN_LFE_FRST_CNT: 0
+      CTPRVN_MNYCH_CNT: 0
+      CTPRVN_NWBB_NWBBSHR_CNT: 0
+      CTPRVN_NWWDS_NMTW_CNT: 0
+      CTPRVN_OPS_CNT: 0
+      CTPRVN_YGMN_CNT: 0
+      ETC_AREA_LFE_FRST_CNT: 626
+      ETC_AREA_MNYCH_CNT: 0
+      ETC_AREA_NWBB_NWBBSHR_CNT: 0
+      ETC_AREA_NWWDS_NMTW_CNT: 366
+      ETC_AREA_OPS_CNT: 0
+      ETC_AREA_YGMN_CNT: 0
+      HOUSE_MANAGE_NO: 2025000566
+      HOUSE_TY: 059.9800 
+      INSTT_RECOMEND_DCSN_CNT: 0
+      INSTT_RECOMEND_HSHLDCO: 1
+      INSTT_RECOMEND_PREPAR_CNT: 4
+      LFE_FRST_HSHLDCO: 1
+      MNYCH_HSHLDCO: 0
+      NWBB_NWBBSHR_HSHLDCO: 0
+      NWWDS_NMTW_HSHLDCO: 2
+      OLD_PARNTS_SUPORT_HSHLDCO: 0
+      PBLANC_NO: 2025000566
+      SPSPLY_HSHLDCO: 4
+      SUBSCRPT_RESULT_NM: 泥?빟?묒닔 醫낅즺
+      TRANSR_INSTT_ENFSN_CNT: 0
+      TRANSR_INSTT_ENFSN_HSHLDCO: 0
+      YGMN_HSHLDCO: 0
+
+============================================================
+?뱤 ?뚯뒪??寃곌낵 ?붿빟
+============================================================
+
+1. 紐⑤뜽 ?뺣낫: ???깃났 (6媛?
+2. 寃쎌웳瑜? ???깃났 (24媛?
+3. ?밸퀎怨듦툒: ???깃났 (6媛?
+
+============================================================
+?뮶 ???媛?ν븳 ?뺣낫 遺꾩꽍
+============================================================
+
+?벀 紐⑤뜽 ?뺣낫?먯꽌 ???媛?ν븳 ?꾨뱶:
+   ??MODEL_NO: 01
+   ??HOUSE_TY: 059.9800 
+   ??SUPLY_AR: 77.8807
+   ??SUPLY_HSHLDCO: 6
+   ??SPSPLY_HSHLDCO: 4
+   ??LTTOT_TOP_AMOUNT: 201200
+   ??INSTT_RECOMEND_HSHLDCO: 1
+   ??LFE_FRST_HSHLDCO: 1
+   ??MNYCH_HSHLDCO: 0
+   ??NWWDS_HSHLDCO: 2
+   ??OLD_PARNTS_SUPORT_HSHLDCO: 0
+
+?벀 寃쎌웳瑜??뺣낫?먯꽌 ???媛?ν븳 ?꾨뱶:
+   ??MODEL_NO: 01
+   ??HOUSE_TY: 059.9800 
+   ??SUBSCRPT_RANK_CODE: 1
+   ??RESIDE_SECD: 01
+   ??SUPLY_HSHLDCO: 6
+   ??REQ_CNT: 10154
+
+?벀 ?밸퀎怨듦툒 ?뺣낫?먯꽌 ???媛?ν븳 ?꾨뱶:
+   - 珥?34媛??꾨뱶
+   - 二쇱슂 ?꾨뱶: CRSPAREA_LFE_FRST_CNT, CRSPAREA_MNYCH_CNT, CRSPAREA_NWBB_NWBBSHR_CNT, CRSPAREA_NWWDS_NMTW_CNT, CRSPAREA_OPS_CNT, CRSPAREA_YGMN_CNT, CTPRVN_LFE_FRST_CNT, CTPRVN_MNYCH_CNT, CTPRVN_NWBB_NWBBSHR_CNT, CTPRVN_NWWDS_NMTW_CNT...
+
+???뚯뒪???꾨즺!

@@ -1,0 +1,105 @@
+{
+  "rows": [
+    {
+      "modelNo": "1",
+      "houseType": "076.5916A",
+      "areaSqm": 101.7996,
+      "areaPyeong": 30.794240425918083,
+      "priceThousand": 23770,
+      "supplyGeneral": 323,
+      "supplySpecial": 241,
+      "supplyTotal": 564,
+      "specialRequests": {
+        "기관추천": 0,
+        "신혼부부": 0,
+        "생애최초": 0,
+        "다자녀가구": 1,
+        "노부모부양": 1,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 241,
+          "request": 2,
+          "rate": 0.008298755186721992,
+          "remaining": 239
+        },
+        "rank1": {
+          "target": 562,
+          "request": 15,
+          "rate": 0.026690391459074734,
+          "remaining": 547,
+          "localRequest": 4,
+          "etcRequest": 11
+        },
+        "rank2": {
+          "target": 562,
+          "request": 13,
+          "rate": 0.023131672597864767,
+          "remaining": 549,
+          "localRequest": 7,
+          "etcRequest": 6
+        },
+        "total": {
+          "target": 562,
+          "request": 28,
+          "rate": 0.0498220640569395,
+          "remaining": 534
+        }
+      }
+    }
+  ],
+  "missingSpecialRequests": false,
+  "totals": {
+    "modelNo": "TOTAL",
+    "houseType": "합계",
+    "areaSqm": null,
+    "areaPyeong": null,
+    "priceThousand": null,
+    "supplyGeneral": 323,
+    "supplySpecial": 241,
+    "supplyTotal": 564,
+    "specialRequests": {
+      "기관추천": 0,
+      "신혼부부": 0,
+      "생애최초": 0,
+      "다자녀가구": 1,
+      "노부모부양": 1,
+      "기타": 0,
+      "이전기관": 0,
+      "영구임대": 0
+    },
+    "stages": {
+      "special": {
+        "target": 241,
+        "request": 2,
+        "rate": 0.008298755186721992,
+        "remaining": 239
+      },
+      "rank1": {
+        "target": 562,
+        "request": 15,
+        "rate": 0.026690391459074734,
+        "remaining": 547,
+        "localRequest": 4,
+        "etcRequest": 11
+      },
+      "rank2": {
+        "target": 562,
+        "request": 13,
+        "rate": 0.023131672597864767,
+        "remaining": 549,
+        "localRequest": 7,
+        "etcRequest": 6
+      },
+      "total": {
+        "target": 562,
+        "request": 28,
+        "rate": 0.0498220640569395,
+        "remaining": 534
+      }
+    }
+  }
+}

@@ -1,0 +1,464 @@
+/* Global Layout */
+.container {
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.pageTitle {
+    margin-bottom: 24px;
+    font-size: 28px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.sectionTitle {
+    margin-bottom: 20px;
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+}
+
+.noticeBox {
+    padding: 16px 20px;
+    background-color: #fff9e6;
+    border: 1px solid #ffd700;
+    border-radius: 6px;
+    margin-bottom: 32px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #5c4a00;
+}
+
+.noticeBox p {
+    margin: 0;
+}
+
+/* Search Form */
+.searchFormContainer {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 20px;
+    background-color: #f9f9f9;
+}
+
+.formRow {
+    margin-bottom: 18px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.label {
+    min-width: 100px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+}
+
+.select,
+.input {
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+    background-color: white;
+}
+
+.flex1 {
+    flex: 1;
+}
+
+.submitButton {
+    padding: 8px 24px;
+    background-color: #0066cc;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 80px;
+}
+
+.submitButton:hover {
+    background-color: #0052a3;
+}
+
+.submitButton:disabled {
+    background-color: #999;
+    cursor: not-allowed;
+}
+
+.notificationButton {
+    padding: 10px 24px;
+    background-color: #ffd700;
+    color: #333;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.notificationButton:hover {
+    background-color: #e6c200;
+}
+
+.radioLabel {
+    margin-right: 20px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.radioInput {
+    margin-right: 6px;
+}
+
+/* Search Results - Table (Desktop) */
+.resultsContainer {
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #ddd;
+    background-color: white;
+    table-layout: fixed;
+    min-width: 1200px;
+}
+
+.th {
+    padding: 12px;
+    border: 1px solid #ddd;
+    text-align: left;
+    background-color: #f5f5f5;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.td {
+    padding: 12px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+}
+
+.houseName {
+    cursor: pointer;
+    color: #0066cc;
+}
+
+.houseName:hover {
+    text-decoration: underline;
+}
+
+.mobileCardList {
+    display: none;
+}
+
+/* Modal */
+.modalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.modalContent {
+    background-color: white;
+    border-radius: 8px;
+    max-width: 1200px;
+    width: 100%;
+    max-height: 90vh;
+    overflow: auto;
+    padding: 24px;
+    position: relative;
+}
+
+.closeButton {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    padding: 8px 16px;
+    background-color: #f0f0f0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+/* Utility Classes */
+.tableWrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    margin-bottom: 16px;
+    max-width: 100%;
+}
+
+.desktopOnly {
+    display: block;
+}
+
+.mobileOnly {
+    display: none;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .desktopOnly {
+        display: none !important;
+    }
+
+    .mobileOnly {
+        display: block !important;
+    }
+
+    .container {
+        padding: 16px;
+        max-width: 100%;
+    }
+
+    .pageTitle {
+        font-size: 22px;
+    }
+
+    /* Search Form Stack */
+    .formRow {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .label {
+        min-width: auto;
+        margin-bottom: 2px;
+    }
+
+    .select,
+    .input {
+        width: 100%;
+    }
+
+    .radioLabel {
+        margin-bottom: 8px;
+    }
+
+    .submitButton {
+        width: 100%;
+        padding: 12px;
+        font-size: 16px;
+    }
+
+    .notificationButton {
+        width: 100%;
+        padding: 12px;
+        margin-top: 8px;
+    }
+
+    /* Hide Table, Show Cards */
+    .table {
+        display: none;
+    }
+
+    .resultsContainer {
+        overflow-x: visible;
+    }
+
+    .mobileCardList {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .mobileCard {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .cardHeader {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .cardTitle {
+        font-size: 16px;
+        font-weight: 600;
+        color: #0066cc;
+        margin-bottom: 4px;
+    }
+
+    .cardBadge {
+        font-size: 12px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        white-space: nowrap;
+        margin-left: 8px;
+    }
+
+    .cardRow {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: #555;
+    }
+
+    .cardLabel {
+        color: #888;
+        min-width: 80px;
+    }
+
+    .cardValue {
+        font-weight: 500;
+        text-align: right;
+    }
+
+    .expandButton {
+        width: 100%;
+        margin-top: 12px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        color: #555;
+        font-weight: 500;
+    }
+
+    /* Modal Full Screen */
+    .modalOverlay {
+        padding: 0;
+        align-items: flex-end;
+    }
+
+    .modalContent {
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        padding: 16px;
+    }
+
+    /* Mobile Detail View Cards */
+    .detailCard {
+        background: white;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .detailHeader {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .detailType {
+        font-size: 16px;
+        font-weight: 700;
+        color: #333;
+    }
+
+    .detailPrice {
+        font-size: 15px;
+        color: #e44;
+        font-weight: 600;
+    }
+
+    .detailSection {
+        margin-bottom: 12px;
+    }
+
+    .detailSectionTitle {
+        font-size: 13px;
+        color: #666;
+        margin-bottom: 6px;
+        font-weight: 600;
+        background-color: #f8f9fa;
+        padding: 4px 8px;
+        border-radius: 4px;
+        display: inline-block;
+    }
+
+    .detailRow {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+        font-size: 13px;
+        padding: 0 4px;
+    }
+
+    .detailLabel {
+        color: #888;
+    }
+
+    .detailValue {
+        color: #333;
+        font-weight: 500;
+    }
+}
+
+/* Tab Styles */
+.tabContainer {
+    display: flex;
+    gap: 4px;
+    background: #f1f3f5;
+    padding: 4px;
+    border-radius: 8px;
+}
+
+.tabButton {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s ease;
+}
+
+.tabButton:hover {
+    background: rgba(255, 255, 255, 0.5);
+    color: #333;
+}
+
+.tabActive {
+    background: white;
+    color: #0066cc;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 768px) {
+    .tabContainer {
+        margin-top: 12px;
+    }
+
+    .tabButton {
+        padding: 6px 12px;
+        font-size: 13px;
+    }
+}

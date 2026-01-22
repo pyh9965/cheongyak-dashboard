@@ -1,0 +1,255 @@
+{
+  "rows": [
+    {
+      "modelNo": "1",
+      "houseType": "059.9878",
+      "areaSqm": 78.1522,
+      "areaPyeong": 23.640934115796476,
+      "priceThousand": 34800,
+      "supplyGeneral": 40,
+      "supplySpecial": 27,
+      "supplyTotal": 67,
+      "specialRequests": {
+        "기관추천": 1,
+        "신혼부부": 0,
+        "생애최초": 0,
+        "다자녀가구": 25,
+        "노부모부양": 2,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 27,
+          "request": 28,
+          "rate": 1.037037037037037,
+          "remaining": -1
+        },
+        "rank1": {
+          "target": 40,
+          "request": 891,
+          "rate": 22.275,
+          "remaining": -851,
+          "localRequest": 841,
+          "etcRequest": 50
+        },
+        "rank2": {
+          "target": 40,
+          "request": null,
+          "rate": 0,
+          "remaining": 40,
+          "localRequest": 0,
+          "etcRequest": 0
+        },
+        "total": {
+          "target": 40,
+          "request": 891,
+          "rate": 22.275,
+          "remaining": -851
+        }
+      }
+    },
+    {
+      "modelNo": "2",
+      "houseType": "074.9481",
+      "areaSqm": 96.9067,
+      "areaPyeong": 29.314144836348238,
+      "priceThousand": 44070,
+      "supplyGeneral": 71,
+      "supplySpecial": 51,
+      "supplyTotal": 122,
+      "specialRequests": {
+        "기관추천": 4,
+        "신혼부부": 0,
+        "생애최초": 0,
+        "다자녀가구": 52,
+        "노부모부양": 5,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 51,
+          "request": 61,
+          "rate": 1.196078431372549,
+          "remaining": -10
+        },
+        "rank1": {
+          "target": 71,
+          "request": 975,
+          "rate": 13.732394366197184,
+          "remaining": -904,
+          "localRequest": 908,
+          "etcRequest": 67
+        },
+        "rank2": {
+          "target": 71,
+          "request": null,
+          "rate": 0,
+          "remaining": 71,
+          "localRequest": 0,
+          "etcRequest": 0
+        },
+        "total": {
+          "target": 71,
+          "request": 975,
+          "rate": 13.732394366197184,
+          "remaining": -904
+        }
+      }
+    },
+    {
+      "modelNo": "3",
+      "houseType": "084.9567A",
+      "areaSqm": 109.9116,
+      "areaPyeong": 33.248109383507774,
+      "priceThousand": 48600,
+      "supplyGeneral": 83,
+      "supplySpecial": 60,
+      "supplyTotal": 143,
+      "specialRequests": {
+        "기관추천": 5,
+        "신혼부부": 8,
+        "생애최초": 0,
+        "다자녀가구": 161,
+        "노부모부양": 3,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 60,
+          "request": 177,
+          "rate": 2.95,
+          "remaining": -117
+        },
+        "rank1": {
+          "target": 83,
+          "request": 4949,
+          "rate": 59.626506024096386,
+          "remaining": -4866,
+          "localRequest": 4733,
+          "etcRequest": 216
+        },
+        "rank2": {
+          "target": 83,
+          "request": null,
+          "rate": 0,
+          "remaining": 83,
+          "localRequest": 0,
+          "etcRequest": 0
+        },
+        "total": {
+          "target": 83,
+          "request": 4949,
+          "rate": 59.626506024096386,
+          "remaining": -4866
+        }
+      }
+    },
+    {
+      "modelNo": "4",
+      "houseType": "084.9762B",
+      "areaSqm": 110.8082,
+      "areaPyeong": 33.519329663016514,
+      "priceThousand": 47650,
+      "supplyGeneral": 41,
+      "supplySpecial": 30,
+      "supplyTotal": 71,
+      "specialRequests": {
+        "기관추천": 0,
+        "신혼부부": 1,
+        "생애최초": 0,
+        "다자녀가구": 17,
+        "노부모부양": 2,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 30,
+          "request": 20,
+          "rate": 0.6666666666666666,
+          "remaining": 10
+        },
+        "rank1": {
+          "target": 51,
+          "request": 670,
+          "rate": 13.137254901960784,
+          "remaining": -619,
+          "localRequest": 636,
+          "etcRequest": 34
+        },
+        "rank2": {
+          "target": 51,
+          "request": null,
+          "rate": 0,
+          "remaining": 51,
+          "localRequest": 0,
+          "etcRequest": 0
+        },
+        "total": {
+          "target": 51,
+          "request": 670,
+          "rate": 13.137254901960784,
+          "remaining": -619
+        }
+      }
+    }
+  ],
+  "missingSpecialRequests": false,
+  "totals": {
+    "modelNo": "TOTAL",
+    "houseType": "합계",
+    "areaSqm": null,
+    "areaPyeong": null,
+    "priceThousand": null,
+    "supplyGeneral": 235,
+    "supplySpecial": 168,
+    "supplyTotal": 403,
+    "specialRequests": {
+      "기관추천": 10,
+      "신혼부부": 9,
+      "생애최초": 0,
+      "다자녀가구": 255,
+      "노부모부양": 12,
+      "기타": 0,
+      "이전기관": 0,
+      "영구임대": 0
+    },
+    "stages": {
+      "special": {
+        "target": 168,
+        "request": 286,
+        "rate": 1.7023809523809523,
+        "remaining": -118
+      },
+      "rank1": {
+        "target": 245,
+        "request": 7485,
+        "rate": 30.551020408163264,
+        "remaining": -7240,
+        "localRequest": 7118,
+        "etcRequest": 367
+      },
+      "rank2": {
+        "target": 245,
+        "request": 0,
+        "rate": 0,
+        "remaining": 245,
+        "localRequest": 0,
+        "etcRequest": 0
+      },
+      "total": {
+        "target": 245,
+        "request": 7485,
+        "rate": 30.551020408163264,
+        "remaining": -7240
+      }
+    }
+  }
+}

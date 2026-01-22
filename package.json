@@ -3,24 +3,39 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "node scripts/auto-update-cache.js && next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "generate-cache": "node scripts/generate-cache.js"
   },
   "dependencies": {
+    "@types/file-saver": "^2.0.7",
+    "@types/leaflet": "^1.9.21",
+    "@types/leaflet.markercluster": "^1.5.6",
     "@types/xlsx": "^0.0.35",
+    "chart.js": "^4.5.1",
+    "dotenv": "^17.2.3",
+    "file-saver": "^2.0.5",
+    "leaflet": "^1.9.4",
+    "leaflet.markercluster": "^1.5.3",
     "next": "^14.2.33",
+    "node-fetch": "^3.3.2",
     "react": "18.3.1",
+    "react-chartjs-2": "^5.3.1",
     "react-dom": "18.3.1",
+    "react-leaflet": "^4.2.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@types/node": "20.11.30",
     "@types/react": "18.2.66",
     "@types/react-dom": "18.2.22",
     "eslint": "8.57.0",
     "eslint-config-next": "14.2.5",
+    "playwright-mcp": "^0.0.19",
+    "ts-node": "^10.9.2",
     "typescript": "5.6.3"
   }
 }

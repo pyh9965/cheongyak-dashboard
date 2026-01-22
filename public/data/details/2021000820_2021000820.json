@@ -1,0 +1,105 @@
+{
+  "rows": [
+    {
+      "modelNo": "1",
+      "houseType": "084.9739",
+      "areaSqm": 111.0754,
+      "areaPyeong": 33.60015729929215,
+      "priceThousand": 39340,
+      "supplyGeneral": 114,
+      "supplySpecial": 189,
+      "supplyTotal": 303,
+      "specialRequests": {
+        "기관추천": 30,
+        "신혼부부": 23,
+        "생애최초": 99,
+        "다자녀가구": 140,
+        "노부모부양": 6,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 189,
+          "request": 298,
+          "rate": 1.5767195767195767,
+          "remaining": -109
+        },
+        "rank1": {
+          "target": 114,
+          "request": 1207,
+          "rate": 10.587719298245615,
+          "remaining": -1093,
+          "localRequest": 1207,
+          "etcRequest": 0
+        },
+        "rank2": {
+          "target": 114,
+          "request": null,
+          "rate": 0,
+          "remaining": 114,
+          "localRequest": 0,
+          "etcRequest": 0
+        },
+        "total": {
+          "target": 114,
+          "request": 1207,
+          "rate": 10.587719298245615,
+          "remaining": -1093
+        }
+      }
+    }
+  ],
+  "missingSpecialRequests": false,
+  "totals": {
+    "modelNo": "TOTAL",
+    "houseType": "합계",
+    "areaSqm": null,
+    "areaPyeong": null,
+    "priceThousand": null,
+    "supplyGeneral": 114,
+    "supplySpecial": 189,
+    "supplyTotal": 303,
+    "specialRequests": {
+      "기관추천": 30,
+      "신혼부부": 23,
+      "생애최초": 99,
+      "다자녀가구": 140,
+      "노부모부양": 6,
+      "기타": 0,
+      "이전기관": 0,
+      "영구임대": 0
+    },
+    "stages": {
+      "special": {
+        "target": 189,
+        "request": 298,
+        "rate": 1.5767195767195767,
+        "remaining": -109
+      },
+      "rank1": {
+        "target": 114,
+        "request": 1207,
+        "rate": 10.587719298245615,
+        "remaining": -1093,
+        "localRequest": 1207,
+        "etcRequest": 0
+      },
+      "rank2": {
+        "target": 114,
+        "request": null,
+        "rate": null,
+        "remaining": null,
+        "localRequest": 0,
+        "etcRequest": 0
+      },
+      "total": {
+        "target": 114,
+        "request": 1207,
+        "rate": 10.587719298245615,
+        "remaining": -1093
+      }
+    }
+  }
+}

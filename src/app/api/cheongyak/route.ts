@@ -19,7 +19,7 @@ const DATASETS = {
   remaining: { endpoint: "getRemndrLttotPblancCmpet" },
   score: { endpoint: "getAPTLttotPblancScore" },
   special: { endpoint: "getAPTSplplyReqstStus" },
-  
+
   notice: {
     endpoint: "getAPTLttotPblancDetail",
     service: "ApplyhomeInfoDetailSvc",
@@ -27,39 +27,41 @@ const DATASETS = {
     requiredParams: ["houseManageNo", "pblancNo"],
     useHousePblancCond: true,
   },
-  
+
   noticeList: {
     endpoint: "getAPTLttotPblancDetail",
     service: "ApplyhomeInfoDetailSvc",
     pagingMode: "page",
     defaultPerPage: 20,
   },
-  
+
   noticeModel: {
     endpoint: "getAPTLttotPblancMdl",
     service: "ApplyhomeInfoDetailSvc",
-    includePaging: false,
+    includePaging: true,
+    pagingMode: "page",
+    defaultPerPage: 100,
     requiredParams: ["houseManageNo", "pblancNo"],
     useHousePblancCond: true,
   },
-  
+
   noticeCompetition: {
     endpoint: "getAPTLttotPblancCmpet",
     service: "ApplyhomeInfoCmpetRtSvc",
-    includePaging: false,
+    includePaging: true,
     pagingMode: "page",
     requiredParams: ["houseManageNo", "pblancNo"],
-    useHousePblancCond: true,
+    useHousePblancCond: false,
     defaultPerPage: 100,
   },
-  
+
   noticeSpecial: {
     endpoint: "getAPTSpsplyReqstStus",
     service: "ApplyhomeInfoCmpetRtSvc",
-    includePaging: false,
+    includePaging: true,
     pagingMode: "page",
     requiredParams: ["houseManageNo", "pblancNo"],
-    useHousePblancCond: true,
+    useHousePblancCond: false,
     defaultPerPage: 100,
   },
 } as const satisfies Record<string, DatasetConfig>;
@@ -94,7 +96,7 @@ export async function GET(req: NextRequest) {
   const settled = await Promise.allSettled(
     requestedDatasets.map(async (dataset) => {
       const config = DATASETS[dataset];
-      
+
       // 4-1. 필수 파라미터 검증
       const required = (config as DatasetConfig).requiredParams ?? [];
       const missing = required.filter((param) => {
@@ -114,10 +116,10 @@ export async function GET(req: NextRequest) {
       if ((config as DatasetConfig).useHousePblancCond) {
         const houseManageNo = searchParams.get("houseManageNo");
         const pblancNo = searchParams.get("pblancNo");
-        
+
         delete datasetParams.houseManageNo;
         delete datasetParams.pblancNo;
-        
+
         if (houseManageNo) {
           datasetParams["cond[HOUSE_MANAGE_NO::EQ]"] = houseManageNo;
         }
@@ -126,15 +128,8 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 4-4. 검색 키워드 처리 (API가 주택명 검색을 지원하지 않을 수 있으므로 클라이언트 측 필터링으로 처리)
-      // 주택명 검색은 클라이언트 측에서 필터링하도록 하고, API에는 전달하지 않음
-      const searchKeyword = searchParams.get("q") || searchParams.get("houseNm");
-      if (searchKeyword && searchKeyword.trim()) {
-        // API가 주택명 검색을 지원하지 않을 수 있으므로, 메타데이터에 검색어만 저장
-        // 실제 필터링은 클라이언트 측에서 처리
-        delete datasetParams.q;
-        delete datasetParams.houseNm;
-      }
+      // 4-4. 검색 키워드 처리 (API가 지원하지 않을 수 있으므로 클라이언트 측 필터링으로 처리)
+      // houseNm, q 등은 파라미터에서 제외하고 클라이언트 단에서 필터링함
 
       // 4-4-1. 지역 필터 처리 (시도 코드를 API 지역 코드로 변환)
       const sidoCode = searchParams.get("sidoCode");
@@ -178,7 +173,7 @@ export async function GET(req: NextRequest) {
       const endDate = searchParams.get("endDate");
       const rcritGte = searchParams.get("cond[RCRIT_PBLANC_DE::GTE]");
       const rcritLte = searchParams.get("cond[RCRIT_PBLANC_DE::LTE]");
-      
+
       if (rcritGte) {
         datasetParams["cond[RCRIT_PBLANC_DE::GTE]"] = rcritGte;
         delete datasetParams.startDate;
@@ -186,7 +181,7 @@ export async function GET(req: NextRequest) {
         datasetParams["cond[RCRIT_PBLANC_DE::GTE]"] = startDate;
         delete datasetParams.startDate;
       }
-      
+
       if (rcritLte) {
         datasetParams["cond[RCRIT_PBLANC_DE::LTE]"] = rcritLte;
         delete datasetParams.endDate;
@@ -201,10 +196,10 @@ export async function GET(req: NextRequest) {
         datasetParams.page = pageNo ?? 1;
         datasetParams.perPage = numOfRows ?? (config as DatasetConfig).defaultPerPage ?? 10;
       }
-      
+
       if ((config as DatasetConfig).includePaging !== false && pagingMode !== "page") {
         datasetParams.pageNo = pageNo ?? 1;
-        datasetParams.numOfRows = numOfRows ?? 10;
+        datasetParams.numOfRows = numOfRows ?? (config as DatasetConfig).defaultPerPage ?? 10;
       }
 
       // 4-6. API 호출
@@ -231,13 +226,24 @@ export async function GET(req: NextRequest) {
       }
 
       // 4-8. 데이터 추출
-      const rows = Array.isArray(response?.data)
+      let rows = Array.isArray(response?.data)
         ? response.data
         : Array.isArray(response?.body)
           ? response.body
           : response?.data
             ? [response.data]
             : [];
+
+      // 4-9. noticeCompetition과 noticeSpecial의 경우 클라이언트 측 필터링
+      if ((dataset === "noticeCompetition" || dataset === "noticeSpecial") &&
+          searchParams.get("houseManageNo") && searchParams.get("pblancNo")) {
+        const targetHouseNo = searchParams.get("houseManageNo");
+        const targetPblancNo = searchParams.get("pblancNo");
+        rows = rows.filter((row: any) =>
+          String(row.HOUSE_MANAGE_NO) === targetHouseNo &&
+          String(row.PBLANC_NO) === targetPblancNo
+        );
+      }
 
       return {
         dataset,

@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import * as XLSX from 'xlsx';
 
 type ApplicationRow = {
   modelNo: string;
@@ -28,178 +27,109 @@ type ExportExcelButtonProps = {
 };
 
 export default function ExportExcelButton({ rows, totals, houseName }: ExportExcelButtonProps) {
-  const handleExport = React.useCallback(() => {
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  const handleExport = React.useCallback(async () => {
     if (!rows || rows.length === 0) {
       alert('내보낼 데이터가 없습니다.');
       return;
     }
 
-    // 데이터 정규화: 엑셀용으로 변환
-    const excelRows = rows.map((row) => {
-      // 특별공급 상세 내역 문자열 생성
-      const specialDetails: string[] = [];
-      if (row.specialRequests) {
-        if (row.specialRequests['기관추천'] && row.specialRequests['기관추천'] > 0) {
-          specialDetails.push(`기관추천 ${row.specialRequests['기관추천']}`);
-        }
-        if (row.specialRequests['신혼부부'] && row.specialRequests['신혼부부'] > 0) {
-          specialDetails.push(`신혼부부 ${row.specialRequests['신혼부부']}`);
-        }
-        if (row.specialRequests['생애최초'] && row.specialRequests['생애최초'] > 0) {
-          specialDetails.push(`생애최초 ${row.specialRequests['생애최초']}`);
-        }
-        if (row.specialRequests['다자녀가구'] && row.specialRequests['다자녀가구'] > 0) {
-          specialDetails.push(`다자녀가구 ${row.specialRequests['다자녀가구']}`);
-        }
-        if (row.specialRequests['노부모부양'] && row.specialRequests['노부모부양'] > 0) {
-          specialDetails.push(`노부모부양 ${row.specialRequests['노부모부양']}`);
+    setIsLoading(true);
+
+    try {
+      // 서버 API 호출로 엑셀 파일 생성
+      const response = await fetch('/api/export-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rows, totals, houseName }),
+      });
+
+      if (!response.ok) {
+        throw new Error('서버 응답 오류');
+      }
+
+      // 파일명 추출 (Content-Disposition 헤더에서)
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'download.xlsx';
+      if (contentDisposition) {
+        // filename*= 형식 우선 (UTF-8 인코딩)
+        const utf8Match = contentDisposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/i);
+        if (utf8Match) {
+          filename = decodeURIComponent(utf8Match[1]);
+        } else {
+          // 일반 filename= 형식
+          const simpleMatch = contentDisposition.match(/filename="?([^";\n]+)"?/i);
+          if (simpleMatch) {
+            filename = simpleMatch[1];
+          }
         }
       }
 
-      // 경쟁률 계산 함수
-      const calcRate = (request: number | null, target: number | null): string => {
-        if (!target || target === 0) return '-';
-        if (!request) return '0.00:1';
-        return `${(request / target).toFixed(2)}:1`;
-      };
+      // Blob으로 변환 후 다운로드
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
 
-      return {
-        타입: row.houseType,
-        '공급면적(㎡)': row.areaSqm ?? null,
-        '공급평형(평)': row.areaPyeong ?? null,
-        '공급세대_일반': row.supplyGeneral,
-        '공급세대_특별': row.supplySpecial,
-        '공급세대_합계': row.supplyTotal,
-        '최고분양가(만원)': row.priceThousand ?? null,
-        '특별공급_대상': row.stages.special.target ?? null,
-        '특별공급_접수': row.stages.special.request ?? null,
-        '특별공급_상세': specialDetails.join(' · ') || '-',
-        '특별공급_경쟁률': calcRate(row.stages.special.request, row.stages.special.target),
-        '1순위_대상': row.stages.rank1.target ?? null,
-        '1순위_접수': row.stages.rank1.request ?? null,
-        '1순위_해당': row.stages.rank1.localRequest ?? null,
-        '1순위_기타': row.stages.rank1.etcRequest ?? null,
-        '1순위_경쟁률': calcRate(row.stages.rank1.request, row.stages.rank1.target),
-        '2순위_대상': row.stages.rank2.target ?? null,
-        '2순위_접수': row.stages.rank2.request ?? null,
-        '2순위_해당': row.stages.rank2.localRequest ?? null,
-        '2순위_기타': row.stages.rank2.etcRequest ?? null,
-        '2순위_경쟁률': calcRate(row.stages.rank2.request, row.stages.rank2.target),
-        '합계_대상': row.stages.total.target ?? null,
-        '합계_접수': row.stages.total.request ?? null,
-        '합계_경쟁률': calcRate(row.stages.total.request, row.stages.total.target),
-      };
-    });
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
 
-    // 합계 행 추가
-    if (totals) {
-      const calcRate = (request: number | null, target: number | null): string => {
-        if (!target || target === 0) return '-';
-        if (!request) return '0.00:1';
-        return `${(request / target).toFixed(2)}:1`;
-      };
+      // 정리
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 100);
 
-      excelRows.push({
-        타입: '합계',
-        '공급면적(㎡)': null,
-        '공급평형(평)': null,
-        '공급세대_일반': totals.supplyGeneral,
-        '공급세대_특별': totals.supplySpecial,
-        '공급세대_합계': totals.supplyTotal,
-        '최고분양가(만원)': null,
-        '특별공급_대상': totals.stages.special.target ?? null,
-        '특별공급_접수': totals.stages.special.request ?? null,
-        '특별공급_상세': '-',
-        '특별공급_경쟁률': calcRate(totals.stages.special.request, totals.stages.special.target),
-        '1순위_대상': totals.stages.rank1.target ?? null,
-        '1순위_접수': totals.stages.rank1.request ?? null,
-        '1순위_해당': null,
-        '1순위_기타': null,
-        '1순위_경쟁률': calcRate(totals.stages.rank1.request, totals.stages.rank1.target),
-        '2순위_대상': totals.stages.rank2.target ?? null,
-        '2순위_접수': totals.stages.rank2.request ?? null,
-        '2순위_해당': null,
-        '2순위_기타': null,
-        '2순위_경쟁률': calcRate(totals.stages.rank2.request, totals.stages.rank2.target),
-        '합계_대상': totals.stages.total.target ?? null,
-        '합계_접수': totals.stages.total.request ?? null,
-        '합계_경쟁률': calcRate(totals.stages.total.request, totals.stages.total.target),
-      });
+    } catch (err) {
+      console.error('Excel export failed:', err);
+      alert(`엑셀 파일 생성 중 오류가 발생했습니다: ${(err as Error).message}`);
+    } finally {
+      setIsLoading(false);
     }
-
-    // 워크시트 생성
-    const ws = XLSX.utils.json_to_sheet(excelRows);
-    
-    // 컬럼 너비 설정
-    const colWidths = [
-      { wch: 12 }, // 타입
-      { wch: 12 }, // 공급면적
-      { wch: 12 }, // 공급평형
-      { wch: 12 }, // 공급세대_일반
-      { wch: 12 }, // 공급세대_특별
-      { wch: 12 }, // 공급세대_합계
-      { wch: 15 }, // 최고분양가
-      { wch: 12 }, // 특별공급_대상
-      { wch: 12 }, // 특별공급_접수
-      { wch: 30 }, // 특별공급_상세
-      { wch: 12 }, // 특별공급_경쟁률
-      { wch: 12 }, // 1순위_대상
-      { wch: 12 }, // 1순위_접수
-      { wch: 12 }, // 1순위_해당
-      { wch: 12 }, // 1순위_기타
-      { wch: 12 }, // 1순위_경쟁률
-      { wch: 12 }, // 2순위_대상
-      { wch: 12 }, // 2순위_접수
-      { wch: 12 }, // 2순위_해당
-      { wch: 12 }, // 2순위_기타
-      { wch: 12 }, // 2순위_경쟁률
-      { wch: 12 }, // 합계_대상
-      { wch: 12 }, // 합계_접수
-      { wch: 12 }, // 합계_경쟁률
-    ];
-    ws['!cols'] = colWidths;
-
-    // 워크북 생성
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '청약접수결과');
-
-    // 파일명 생성
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const filename = houseName 
-      ? `청약접수결과_${houseName}_${dateStr}.xlsx`
-      : `청약접수결과_${dateStr}.xlsx`;
-
-    // 파일 다운로드
-    XLSX.writeFile(wb, filename);
   }, [rows, totals, houseName]);
 
   return (
     <button
       onClick={handleExport}
+      disabled={isLoading}
       style={{
         padding: "8px 16px",
-        backgroundColor: "#10b981",
+        backgroundColor: isLoading ? "#9ca3af" : "#10b981",
         color: "white",
         border: "none",
         borderRadius: "6px",
-        cursor: "pointer",
+        cursor: isLoading ? "not-allowed" : "pointer",
         fontSize: "14px",
         fontWeight: "500",
         display: "flex",
         alignItems: "center",
         gap: "6px",
+        transition: "all 0.2s ease",
+        opacity: isLoading ? 0.7 : 1,
       }}
       onMouseOver={(e) => {
-        e.currentTarget.style.backgroundColor = "#059669";
+        if (!isLoading) {
+          e.currentTarget.style.backgroundColor = "#059669";
+          e.currentTarget.style.transform = "translateY(-1px)";
+          e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)";
+        }
       }}
       onMouseOut={(e) => {
-        e.currentTarget.style.backgroundColor = "#10b981";
+        if (!isLoading) {
+          e.currentTarget.style.backgroundColor = "#10b981";
+          e.currentTarget.style.transform = "translateY(0)";
+          e.currentTarget.style.boxShadow = "none";
+        }
       }}
       title="엑셀 파일로 다운로드"
     >
-      <span>📥</span>
-      <span>엑셀 다운로드</span>
+      <span style={{ fontSize: "16px" }}>{isLoading ? "⏳" : "📥"}</span>
+      <span>{isLoading ? "생성 중..." : "엑셀 다운로드"}</span>
     </button>
   );
 }
-

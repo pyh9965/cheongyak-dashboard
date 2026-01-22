@@ -1,0 +1,126 @@
+.container {
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    border: 1px solid #e9ecef;
+}
+
+/* Metrics Grid */
+.metricsGrid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.metricCard {
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.metricCard h3 {
+    font-size: 13px;
+    color: #6c757d;
+    margin: 0 0 8px 0;
+    font-weight: 500;
+}
+
+.value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #212529;
+    margin: 0;
+}
+
+.subValueName {
+    font-size: 12px;
+    color: #0066cc;
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.unit {
+    font-size: 14px;
+    font-weight: 500;
+    color: #868e96;
+}
+
+.high {
+    color: #0066cc;
+}
+
+.highlight {
+    color: #f03e3e;
+    font-size: 22px;
+}
+
+.super {
+    color: #fd7e14;
+}
+
+/* Charts Grid */
+.chartsGrid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+}
+
+.chartCard {
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    min-height: 300px;
+}
+
+.chartCard h3 {
+    font-size: 15px;
+    color: #495057;
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f1f3f5;
+}
+
+.chartWrapper {
+    position: relative;
+    height: 240px;
+    width: 100%;
+}
+
+/* Response */
+@media (max-width: 1200px) {
+    .metricsGrid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .metricsGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .chartsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .chartCard {
+        min-height: 250px;
+    }
+}
+
+@media (max-width: 480px) {
+    .metricsGrid {
+        grid-template-columns: 1fr;
+    }
+}

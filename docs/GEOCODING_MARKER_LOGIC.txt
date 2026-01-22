@@ -1,0 +1,156 @@
+// CompetitionRateMap.tsx에 추가할 geocoding 지원 마커 업데이트 로직
+
+// 이 코드를 기존 마커 업데이트 useEffect 부분에 교체하세요 (라인 265-357)
+
+useEffect(() => {
+    if (!isMapReady || !leafletMapRef.current) return;
+
+    const L = (window as any).L;
+    if (!L) return;
+
+    // 지도 사이즈 재계산
+    try {
+        leafletMapRef.current.invalidateSize();
+    } catch (e) {
+        console.warn("Map invalidateSize failed:", e);
+    }
+
+    const timer = setTimeout(async () => {
+        if (!leafletMapRef.current) return;
+
+        console.log(`줌 레벨 ${currentZoom}: 마커 업데이트 시작`);
+
+        // 기존 마커 제거
+        markersRef.current.forEach((marker) => {
+            try { marker.remove(); } catch (e) { }
+        });
+        markersRef.current = [];
+
+        // 기존 클러스터 그룹 제거
+        if (markerClusterGroupRef.current) {
+            try {
+                leafletMapRef.current.removeLayer(markerClusterGroupRef.current);
+            } catch (e) { }
+        }
+
+        // 줌 레벨 10 이상: 개별 주택 마커 (지오코딩 사용)
+        if (currentZoom >= 10) {
+            console.log("상세 모드: 개별 주택 마커 표시");
+            
+            // 클러스터 그룹 생성
+            const markers = L.markerClusterGroup({
+                maxClusterRadius: 50,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false,
+                zoomToBoundsOnClick: true,
+            });
+
+            // 개별 주택 마커 생성
+            for (const item of filteredData) {
+                if (!item.HSSPLY_ADRES) continue;
+
+                const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
+                const extra = extraData[itemKey];
+                const rate = extra?.totals?.stages?.[rateType]?.rate;
+
+                // 지오코딩 (캐시 확인 후 API 호출)
+                let coords = geocodedItems.get(item.HSSPLY_ADRES);
+                if (!coords) {
+                    coords = await geocodeAddress(item.HSSPLY_ADRES);
+                    if (coords) {
+                        setGeocodedItems(prev => new Map(prev).set(item.HSSPLY_ADRES!, coords!));
+                    }
+                }
+
+                if (!coords) {
+                    // 지오코딩 실패 시 지역 중심 좌표 사용
+                    const parsed = parseAddress(item.HSSPLY_ADRES);
+                    if (parsed) {
+                        coords = getCoordinates(parsed.fullKey);
+                    }
+                }
+
+                if (!coords) continue;
+
+                const color = getRateColor(rate ?? null);
+                const iconHtml = `<div style="
+                    width: 16px;
+                    height: 16px;
+                    background-color: ${color};
+                    opacity: 0.8;
+                    border: 2px solid #fff;
+                    border-radius: 50%;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                "></div>`;
+
+                const icon = L.divIcon({
+                    html: iconHtml,
+                    className: "",
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+
+                const marker = L.marker([coords[0], coords[1]], { icon });
+                marker.bindTooltip(
+                    `<strong>${item.HOUSE_NM}</strong><br/>경쟁률: ${formatRate(rate ?? null)}`,
+                    { direction: "top" }
+                );
+                marker.on("click", () => onItemClick(item));
+
+                markers.addLayer(marker);
+            }
+
+            markerClusterGroupRef.current = markers;
+            leafletMapRef.current.addLayer(markers);
+
+        } else {
+            // 줌 레벨 10 미만: 지역별 집계 마커
+            console.log(`광역 모드: 지역별 집계 마커 표시 (${regionData.length}개)`);
+
+            regionData.forEach((region) => {
+                if (!region.coordinates || region.coordinates.length !== 2) return;
+
+                const color = getRateColor(region.avgRate);
+                const radius = getCircleRadius(region.totalSupply);
+
+                const iconHtml = `<div style="
+                    width:${radius*2}px;
+                    height:${radius*2}px;
+                    background-color:${color};
+                    opacity:0.7;
+                    border:2px solid #fff;
+                    border-radius:50%;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.3);
+                "></div>`;
+
+                const icon = L.divIcon({
+                    html: iconHtml,
+                    className: "",
+                    iconSize: [radius * 2, radius * 2],
+                    iconAnchor: [radius, radius]
+                });
+
+                const marker = L.marker([region.coordinates[0], region.coordinates[1]], { icon });
+                marker.bindTooltip(
+                    `<strong>${region.key}</strong><br/>청약 ${region.itemCount}건<br/>공급 ${region.totalSupply.toLocaleString()}세대<br/>평균 경쟁률: ${formatRate(region.avgRate)}`,
+                    { direction: "top", offset: [0, -radius] }
+                );
+                marker.bindPopup(
+                    `<div style="min-width:150px">
+                      <h4 style="margin:0 0 8px;font-size:14px">${region.key}</h4>
+                      <div style="font-size:12px;color:#666">청약 ${region.itemCount}건 • 공급 ${region.totalSupply.toLocaleString()}세대</div>
+                      <div style="font-size:13px;margin-top:4px">평균 경쟁률: <strong>${formatRate(region.avgRate)}</strong></div>
+                    </div>`
+                );
+                marker.on("click", () => {
+                    setSelectedRegion((prev) => (prev === region.key ? null : region.key));
+                });
+
+                marker.addTo(leafletMapRef.current);
+                markersRef.current.push(marker);
+            });
+        }
+    }, 500);
+
+    return () => clearTimeout(timer);
+}, [isMapReady, regionData, currentZoom, filteredData, extraData, rateType, geocodedItems]);
