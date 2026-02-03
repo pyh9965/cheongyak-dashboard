@@ -6,33 +6,26 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
 import { parseAddress } from "@/lib/address-parser";
 import { getCoordinates as getGeoCoordinates, type Coordinates } from "@/lib/geo-coordinates";
-import { restoreGeocodeCache, batchGeocode, geocodeAddress, getGeocodeStats } from "@/lib/geocoding";
+import { restoreGeocodeCache } from "@/lib/geocoding";
 import { AptInfo, CacheData, CachedStats } from "@/lib/cache-loader";
+import { useCompetitionMapStats, RegionData } from "@/hooks/useCompetitionMapStats";
 import styles from "./CompetitionRateMap.module.css";
+import { getCompetitionStagesSync } from "@/hooks/utils";
 
 // 타입 정의
 export type ExtraData = {
     totals?: {
         supplyTotal: number;
         stages: {
-            special: { rate: number | null };
-            rank1: { rate: number | null };
-            rank2: { rate: number | null };
-            total: { rate: number | null };
+            special: { rate: number | null; target?: number; request?: number };
+            rank1: { rate: number | null; target?: number; request?: number };
+            rank2: { rate: number | null; target?: number; request?: number };
+            total: { rate: number | null; target?: number; request?: number };
         };
     };
 };
 
 export type RateType = "special" | "rank1" | "rank2" | "total";
-
-type RegionData = {
-    key: string;
-    coordinates: Coordinates;
-    items: AptInfo[];
-    totalSupply: number;
-    avgRate: number | null;
-    itemCount: number;
-};
 
 interface CompetitionRateMapProps {
     data: AptInfo[];
@@ -119,125 +112,14 @@ export default function CompetitionRateMap({
         });
     }, [data, startDate, endDate]);
 
-    const [processingStatus, setProcessingStatus] = useState<{ isProcessing: boolean; message: string; percent: number }>({
-        isProcessing: false,
-        message: "",
-        percent: 0
-    });
-
-    // 비동기 지역별 집계 데이터 상태
-    const [asyncRegionData, setAsyncRegionData] = useState<RegionData[]>([]);
-
-    // 지역별 집계 (최적화: 데이터를 한 번에 처리)
-    useEffect(() => {
-        if (filteredData.length === 0) {
-            setAsyncRegionData([]);
-            return;
-        }
-
-        setProcessingStatus({
-            isProcessing: true,
-            message: "데이터 처리 중...",
-            percent: 0
-        });
-
-        // UI 렌더링을 잠시 양보한 후 즉시 처리
-        const timer = setTimeout(() => {
-            const regions = new Map<string, RegionData>();
-
-            // 1. 지역 그룹핑 (줌 레벨에 따라 광역/기초 구분)
-            const isSidoLevel = currentZoom < 9;
-
-            filteredData.forEach((item) => {
-                const address = item.HSSPLY_ADRES;
-                const parsed = parseAddress(address);
-                if (!parsed) return;
-
-                // 줌 레벨에 따라 키 선택: 9미만은 시도(서울), 9이상은 구(서울 강남구)
-                let key = isSidoLevel ? parsed.sido : parsed.fullKey;
-                let coords = getGeoCoordinates(key);
-
-                // 시군구 레벨에서 좌표가 없으면 시도 레벨로 폴백
-                if (!coords && !isSidoLevel) {
-                    key = parsed.sido;
-                    coords = getGeoCoordinates(key);
-                }
-
-                if (!coords) return;
-
-                const existing = regions.get(key);
-                if (existing) {
-                    existing.items.push(item);
-                    existing.totalSupply += item.TOT_SUPLY_HSHLDCO || 0;
-                    existing.itemCount += 1;
-                } else {
-                    regions.set(key, {
-                        key,
-                        coordinates: coords,
-                        items: [item],
-                        totalSupply: item.TOT_SUPLY_HSHLDCO || 0,
-                        avgRate: null,
-                        itemCount: 1,
-                    });
-                }
-            });
-
-            // 2. 통계 매핑 및 평균 계산
-            const regionArray = Array.from(regions.values());
-
-            regionArray.forEach((region) => {
-                let totalSupply = 0;
-                let totalRequest = 0;
-
-                region.items.forEach((item) => {
-                    const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-
-                    // extraData 우선 사용 (상세 경쟁률 데이터)
-                    const extraStats = extraData[itemKey]?.totals;
-                    if (extraStats?.stages) {
-                        // @ts-ignore
-                        const stageData = extraStats.stages[rateType];
-                        const target = stageData?.target || 0;
-                        const request = stageData?.request || 0;
-
-                        if (target > 0) {
-                            totalSupply += target;
-                            totalRequest += request || 0;
-                            return;
-                        }
-                    }
-
-                    // fallback: archiveCache (rate만 있는 경우 역산)
-                    const archiveStats = archiveCache?.calculatedStats?.[itemKey]?.totals;
-                    if (archiveStats?.stages && archiveStats.supplyTotal) {
-                        // @ts-ignore
-                        const rate = archiveStats.stages[rateType]?.rate;
-                        if (rate !== null && rate !== undefined && rate > 0) {
-                            // 공급량을 알 수 없으므로 전체 공급량 사용
-                            const supply = archiveStats.supplyTotal;
-                            totalSupply += supply;
-                            totalRequest += supply * rate;
-                        }
-                    }
-                });
-
-                // 가중 평균 경쟁률 계산 (StatsDashboard와 동일한 방식)
-                region.avgRate = totalSupply > 0 ? totalRequest / totalSupply : null;
-            });
-
-            setAsyncRegionData(regionArray);
-
-            setProcessingStatus({
-                isProcessing: false,
-                message: "완료",
-                percent: 100
-            });
-        }, 10); // 최소한의 지연만 부여
-
-        return () => clearTimeout(timer);
-    }, [filteredData, extraData, rateType, archiveCache, currentZoom]);
-
-    const regionData = asyncRegionData;
+    // Custom Hook을 사용하여 통계 계산 및 지역 그룹핑
+    const { regionData, processingStatus } = useCompetitionMapStats(
+        filteredData,
+        extraData,
+        archiveCache,
+        rateType,
+        currentZoom
+    );
 
     const selectedRegionItems = useMemo(() => {
         if (!selectedRegion) return [];
@@ -497,32 +379,30 @@ export default function CompetitionRateMap({
                 if (clusterGroup) clusterGroup.addTo(leafletMapRef.current);
 
                 data.forEach(item => {
-                    const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-                    const coords = individualMarkers[key];
+                    const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
 
-                    if (!coords) return; // 아직 좌표 없음
-
-                    // 경쟁률 계산 (extraData 우선)
-                    let rate: number | null = null;
-                    const extraStats = extraData[key]?.totals?.stages;
-                    if (extraStats) {
-                        if (rateType === 'total') rate = extraStats.total.rate;
-                        else if (rateType === 'special') rate = extraStats.special.rate;
-                        else if (rateType === 'rank1') rate = extraStats.rank1.rate;
-                        else if (rateType === 'rank2') rate = extraStats.rank2.rate;
+                    // 개별 좌표 우선, 없으면 주소 파싱하여 지역 좌표 사용
+                    let coords: Coordinates | null = individualMarkers[itemKey];
+                    if (!coords) {
+                        const parsed = parseAddress(item.HSSPLY_ADRES);
+                        if (parsed) {
+                            coords = getGeoCoordinates(parsed.fullKey);
+                        }
                     }
 
-                    // fallback: archiveCache
-                    if ((rate === null || rate === undefined || rate === 0) && archiveCache?.calculatedStats?.[key]) {
-                        const stats = archiveCache.calculatedStats[key];
-                        if (rateType === 'total') rate = stats.totals.stages.total.rate;
-                        else if (rateType === 'special') rate = stats.totals.stages.special.rate;
-                        else if (rateType === 'rank1') rate = stats.totals.stages.rank1.rate;
-                        else if (rateType === 'rank2') rate = stats.totals.stages.rank2.rate;
+                    if (!coords) return; // 좌표가 전혀 없음
+
+                    // 공통 유틸리티를 사용하여 경쟁률 조회 (우선순위: extraData > archiveCache)
+                    const stages = getCompetitionStagesSync(itemKey, extraData, archiveCache);
+                    let rate: number | null = null;
+                    
+                    if (stages) {
+                         // @ts-ignore
+                         rate = stages[rateType]?.rate;
                     }
 
                     // 선택된 경쟁률 타입에 데이터가 없으면 마커 표시 안 함 (총 경쟁률은 제외 - 위치 정보 제공 목적)
-                    if (rate === null && rateType !== 'total') return;
+                    if ((rate === null || rate === undefined) && rateType !== 'total') return;
 
                     const color = getRateColor(rate);
 
@@ -683,15 +563,9 @@ export default function CompetitionRateMap({
                         <div className={styles.panelContent}>
                             {selectedRegionItems.map((item, idx) => {
                                 const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-
-                                // extraData 우선 사용
-                                let rate: number | null | undefined = extraData[itemKey]?.totals?.stages?.[rateType]?.rate;
-
-                                // fallback: archiveCache
-                                if ((rate === null || rate === undefined || rate === 0) && archiveCache?.calculatedStats?.[itemKey]) {
-                                    // @ts-ignore
-                                    rate = archiveCache.calculatedStats[itemKey]?.totals?.stages?.[rateType]?.rate;
-                                }
+                                const stages = getCompetitionStagesSync(itemKey, extraData, archiveCache);
+                                // @ts-ignore
+                                const rate: number | null | undefined = stages?.[rateType]?.rate;
 
                                 return (
                                     <div key={idx} className={styles.panelItem} onClick={() => onItemClick(item)}>

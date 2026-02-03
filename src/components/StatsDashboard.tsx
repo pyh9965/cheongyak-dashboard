@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React from "react";
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -14,6 +14,7 @@ import {
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 import { AptInfo, CacheData } from "@/lib/cache-loader";
+import { useDashboardStats } from "@/hooks/useDashboardStats";
 import styles from "./StatsDashboard.module.css";
 
 ChartJS.register(
@@ -31,190 +32,55 @@ interface StatsDashboardProps {
     data: AptInfo[];
     extraData: Record<string, any>;
     archiveCache: CacheData | null;
+    startMonth?: string;
+    endMonth?: string;
 }
 
 export default function StatsDashboard({
     data,
     extraData,
     archiveCache,
+    startMonth,
+    endMonth,
 }: StatsDashboardProps) {
-    // 데이터 집계
-    const stats = useMemo(() => {
-        let supplyTotal = 0;
-        let requestTotal = 0;
+    // Custom Hook을 사용하여 통계 데이터 계산
+    const stats = useDashboardStats(data, extraData, archiveCache, startMonth, endMonth);
 
-        let supplyRank1 = 0;
-        let requestRank1 = 0;
+    // 데이터 범위 검증 (디버깅용)
+    React.useEffect(() => {
+        if (data.length > 0 && (startMonth || endMonth)) {
+            const dates = data
+                .map(item => item.RCRIT_PBLANC_DE)
+                .filter(Boolean)
+                .sort();
 
-        let supplyRank2 = 0;
-        let requestRank2 = 0;
+            const actualStartDate = dates[0] || '';
+            const actualEndDate = dates[dates.length - 1] || '';
 
-        let supplySpecial = 0;
-        let requestSpecial = 0;
+            const actualStartMonth = actualStartDate.substring(0, 7); // YYYY-MM
+            const actualEndMonth = actualEndDate.substring(0, 7);
 
-        let maxCompetition = { name: "", rate: 0 };
+            const requestedStart = startMonth || '';
+            const requestedEnd = endMonth || '';
 
-        // 월별 집계 (확장: 각 순위별 추적)
-        const monthlyStats: Record<string, {
-            supply: number;
-            request: number;
-            special: { supply: number; request: number };
-            rank1: { supply: number; request: number };
-            rank2: { supply: number; request: number };
-        }> = {};
+            console.log(`📊 [StatsDashboard] 데이터 범위 검증:`, {
+                요청된범위: `${requestedStart} ~ ${requestedEnd}`,
+                실제데이터범위: `${actualStartMonth} ~ ${actualEndMonth}`,
+                데이터건수: data.length,
+                일치여부: (requestedStart <= actualStartMonth && requestedEnd >= actualEndMonth) ? '✅' : '⚠️'
+            });
 
-        // 주택구분별 집계
-        const typeStats: Record<string, { supply: number; request: number }> = {};
-
-        console.log(`[StatsDashboard] 집계 시작: ${data.length}개 항목`);
-        let processedCount = 0;
-        let hasDetailedStatsCount = 0;
-
-        data.forEach((item) => {
-            const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-
-            // ✅ 임시 수정: archiveCache에는 request 데이터가 없으므로 extraData만 사용
-            // TODO: 캐시 재생성 후 archiveCache 우선 순위로 변경
-            const itemStats = extraData[key]?.totals;
-
-            // 캐시 데이터가 없거나 'Total' 행만 있는 경우(상세 경쟁률 누락)에 대한 보완 로직
-            const hasDetailedStats = itemStats && itemStats.stages && itemStats.stages.total && itemStats.stages.total.rate !== undefined;
-
-            // 🚨 긴급 디버깅: 실제 런타임 데이터 구조 확인
-            if (data.indexOf(item) < 3) {
-                console.log(`🔍 [EMERGENCY DEBUG] ${item.HOUSE_NM}:`, {
-                    key,
-                    'archiveCache exists': !!archiveCache?.calculatedStats?.[key],
-                    'extraData exists': !!extraData[key],
-                    'itemStats exists': !!itemStats,
-                    'itemStats type': typeof itemStats,
-                    'itemStats keys': itemStats ? Object.keys(itemStats) : 'NO_STATS',
-                    'itemStats.stages': itemStats?.stages,
-                    'itemStats.supplyTotal': itemStats?.supplyTotal,
-                    'hasDetailedStats': hasDetailedStats,
-                    'stages.total.request': itemStats?.stages?.total?.request,
-                    'stages.total.rate': itemStats?.stages?.total?.rate,
-                    'FULL itemStats': itemStats  // 전체 객체 출력
-                });
+            // 불일치 경고
+            if (requestedStart && actualStartMonth && requestedStart < actualStartMonth) {
+                console.warn(`⚠️ [StatsDashboard] 경고: 요청된 시작 월(${requestedStart})이 실제 데이터 시작 월(${actualStartMonth})보다 이릅니다.`);
+                console.warn(`   → "조회" 버튼을 다시 클릭하여 데이터를 새로고침하세요.`);
             }
-
-            if (hasDetailedStats) {
-                hasDetailedStatsCount++;
-                processedCount++;
-
-                // [DEBUG] 정상 데이터 로깅 (첫 5개만)
-                if (data.indexOf(item) < 5) {
-                    // console.log(`[StatsDashboard] Used Cache: ${item.HOUSE_NM}`);
-                }
-
-                // 공급수 중복 합산 방지 (이미 calculatedStats 생성 시 처리됨)
-                const itemSupply = itemStats.supplyTotal || 0;
-
-                // ✅ 수정: totals는 이미 합산된 데이터이므로 total.request를 직접 사용
-                const itemRequestTotal = itemStats.stages.total.request || 0;
-
-                supplyTotal += itemSupply;
-                requestTotal += itemRequestTotal;
-
-                supplyRank1 += itemStats.stages.rank1.target || 0;
-                requestRank1 += itemStats.stages.rank1.request || 0;
-
-                supplyRank2 += itemStats.stages.rank2.target || 0;
-                requestRank2 += itemStats.stages.rank2.request || 0;
-
-                supplySpecial += itemStats.stages.special.target || 0;
-                requestSpecial += itemStats.stages.special.request || 0;
-
-                // 최고 경쟁률 갱신
-                const currentTotalRate = itemStats.stages.total.rate || 0;
-                if (currentTotalRate > maxCompetition.rate) {
-                    maxCompetition = { name: item.HOUSE_NM || "", rate: currentTotalRate };
-                }
-            } else {
-                // [FALLBACK] 통계 데이터가 없거나 불완전할 경우, 기본 필드 사용
-
-                // 1. 공급 세대수 합산
-                const supply = Number(item.TOT_SUPLY_HSHLDCO || 0);
-                supplyTotal += supply;
-
-                // 2. 경쟁률 정보가 API 응답(item) 자체에 포함되어 있는지 확인 (일부 필드 존재 가능성)
-                // 주의: API 원본 데이터에는 '접수건수' 필드가 명시적으로 없는 경우가 많음 (경쟁률만 텍스트로 존재 등)
-                // 따라서 여기서는 '공급수'는 확실히 더하고, '접수건수'는 추정하거나 0으로 둠.
-                // 단, 청약 경쟁률 대시보드 특성상 경쟁률이 중요하므로, 
-                // item의 경쟁률 텍스트 등을 파싱해서 역산할 수도 있으나 복잡함.
-
-                // 여기서는 최소한 '최고 경쟁률'이라도 갱신 시도
-                // (일부 API 데이터에 경쟁률 필드가 있을 수 있음 - 예: GNRL_RNK1_CR)
-
-                // TODO: 추후 detail-data.ts의 로직을 가져와서 실시간 계산하는 것이 가장 정확함.
-                // 현재는 공급수라도 맞추는 것에 집중.
+            if (requestedEnd && actualEndMonth && requestedEnd > actualEndMonth) {
+                console.warn(`⚠️ [StatsDashboard] 경고: 요청된 종료 월(${requestedEnd})이 실제 데이터 종료 월(${actualEndMonth})보다 늦습니다.`);
+                console.warn(`   → "조회" 버튼을 다시 클릭하여 데이터를 새로고침하세요.`);
             }
-
-            // 공통: 월별/유형별 집계 (공급수 기준)
-            const itemSupply = itemStats?.supplyTotal || Number(item.TOT_SUPLY_HSHLDCO || 0);
-
-            // 월별 집계 (확장: 각 순위별 추적)
-            if (item.RCRIT_PBLANC_DE) {
-                const monthKey = item.RCRIT_PBLANC_DE.substring(0, 7); // YYYY-MM
-                if (!monthlyStats[monthKey]) {
-                    monthlyStats[monthKey] = {
-                        supply: 0,
-                        request: 0,
-                        special: { supply: 0, request: 0 },
-                        rank1: { supply: 0, request: 0 },
-                        rank2: { supply: 0, request: 0 }
-                    };
-                }
-                monthlyStats[monthKey].supply += itemSupply;
-                if (hasDetailedStats) {
-                    // 전체 통계
-                    monthlyStats[monthKey].request += itemStats.stages.total.request || 0;
-
-                    // 순위별 통계
-                    monthlyStats[monthKey].special.supply += itemStats.stages.special.target || 0;
-                    monthlyStats[monthKey].special.request += itemStats.stages.special.request || 0;
-
-                    monthlyStats[monthKey].rank1.supply += itemStats.stages.rank1.target || 0;
-                    monthlyStats[monthKey].rank1.request += itemStats.stages.rank1.request || 0;
-
-                    monthlyStats[monthKey].rank2.supply += itemStats.stages.rank2.target || 0;
-                    monthlyStats[monthKey].rank2.request += itemStats.stages.rank2.request || 0;
-                }
-            }
-
-            // 주택 구분별 집계
-            const houseType = item.HOUSE_DTL_SECD_NM || "기타";
-            if (!typeStats[houseType]) {
-                typeStats[houseType] = { supply: 0, request: 0 };
-            }
-            typeStats[houseType].supply += itemSupply;
-            if (hasDetailedStats) {
-                const req = itemStats.stages.total.request || 0;
-                typeStats[houseType].request += req;
-            }
-        });
-
-        console.log(`[StatsDashboard] 집계 완료:`, {
-            총항목수: data.length,
-            통계있는항목수: hasDetailedStatsCount,
-            총공급: supplyTotal,
-            총청약: requestTotal,
-            전체경쟁률: supplyTotal > 0 ? requestTotal / supplyTotal : 0
-        });
-
-
-        return {
-            supplyTotal,
-            requestTotal,
-            rateTotal: supplyTotal > 0 ? requestTotal / supplyTotal : 0,
-            rateRank1: supplyRank1 > 0 ? requestRank1 / supplyRank1 : 0,
-            rateRank2: supplyRank2 > 0 ? requestRank2 / supplyRank2 : 0,
-            rateSpecial: supplySpecial > 0 ? requestSpecial / supplySpecial : 0,
-            maxCompetition,
-            monthlyStats,
-            typeStats,
-        };
-    }, [data, extraData, archiveCache]);
+        }
+    }, [data, startMonth, endMonth]);
 
     // 차트 데이터 준비
     const monthlyLabels = Object.keys(stats.monthlyStats).sort();

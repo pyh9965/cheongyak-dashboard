@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from "react";
 import styles from "./CompetitionTable.module.css";
 import { AptInfo, CacheData, CachedStats } from "@/lib/cache-loader";
-import { getCompetitionStagesSync } from "@/hooks";
+import { getCompetitionStagesSync } from "@/hooks/utils";
 
 type SortDirection = "asc" | "desc";
 type SortColumn =

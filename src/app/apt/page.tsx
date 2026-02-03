@@ -7,6 +7,7 @@ import { AptInfo } from "@/lib/cache-loader";
 import { useAptData } from "@/hooks/useAptData";
 import { NoticeDetailRow, NoticeModelApiRow, NoticeCompetitionApiRow, NoticeSpecialApiRow, buildApplicationRows } from "@/lib/detail-data";
 import { getStaticDetail } from "@/lib/cache-loader";
+import { getCompetitionStagesSync, getSupplyTotalForItem } from "@/hooks/utils";
 
 // Components
 import SearchForm from "@/components/SearchForm";
@@ -63,7 +64,7 @@ function APTPageContent() {
   const [activeTab, setActiveTab] = useState<ViewTab>("list");
   
   // 지도 상태
-  const [mapRateType, setMapRateType] = useState<RateType>("rank1");
+  const [mapRateType, setMapRateType] = useState<RateType>("total");
   const [mapStartDate, setMapStartDate] = useState("");
   const [mapEndDate, setMapEndDate] = useState("");
   
@@ -80,10 +81,33 @@ function APTPageContent() {
   // Pagination logic
   const [itemsPerPage, setItemsPerPage] = useState(15);
   
-  // 초기 데이터 로드
+  // 초기 데이터 로드 및 날짜 범위 변경 감지
+  const prevStartMonth = React.useRef(searchParams.startMonth);
+  const prevEndMonth = React.useRef(searchParams.endMonth);
+
   React.useEffect(() => {
     handleSearch(1);
-  }, []);
+  }, [archiveCache]);
+
+  // 날짜 범위 변경 감지 및 자동 재조회 (표 탭 활성 시)
+  React.useEffect(() => {
+    const startChanged = prevStartMonth.current !== searchParams.startMonth;
+    const endChanged = prevEndMonth.current !== searchParams.endMonth;
+
+    if (startChanged || endChanged) {
+      console.log(`📅 [page.tsx] 날짜 범위 변경 감지: ${prevStartMonth.current}~${prevEndMonth.current} → ${searchParams.startMonth}~${searchParams.endMonth}`);
+
+      // 표 탭이 활성화되어 있으면 즉시 재조회
+      if (activeTab === "table") {
+        console.log(`🔄 [page.tsx] 표 탭 활성 상태 - 자동 재조회 실행`);
+        handleSearch(1);
+      }
+
+      // ref 업데이트
+      prevStartMonth.current = searchParams.startMonth;
+      prevEndMonth.current = searchParams.endMonth;
+    }
+  }, [searchParams.startMonth, searchParams.endMonth, activeTab, handleSearch]);
 
   const filteredList = useMemo(() => {
     return [...data].sort((a, b) => {
@@ -120,12 +144,19 @@ function APTPageContent() {
       const staticDetail = await getStaticDetail(houseManageNo, pblancNo);
 
       if (staticDetail) {
-        setApplicationRows(staticDetail.rows);
-        setMissingSpecialRequestData(staticDetail.missingSpecialRequests);
-        setApplicationTotals(staticDetail.totals);
-        setDetailRows([]);
-      } else {
-        // 2. API 호출
+        // 캐시 데이터 검증: 1순위 접수 데이터가 있는지 확인
+        const hasRank1Data = staticDetail.rows.some(row => row.stages.rank1.request !== null);
+
+        if (hasRank1Data) {
+          setApplicationRows(staticDetail.rows);
+          setMissingSpecialRequestData(staticDetail.missingSpecialRequests);
+          setApplicationTotals(staticDetail.totals);
+          setDetailRows([]);
+          return;
+        }
+      }
+
+      // 2. API 호출
         const params = new URLSearchParams({
           dataset: "notice,noticeModel,noticeCompetition,noticeSpecial",
           houseManageNo,
@@ -156,7 +187,6 @@ function APTPageContent() {
         setApplicationRows(rows);
         setMissingSpecialRequestData(missingSpecialRequests);
         setApplicationTotals(totals);
-      }
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : "상세 데이터를 불러오지 못했습니다.");
     } finally {
@@ -318,6 +348,8 @@ function APTPageContent() {
               data={data}
               extraData={extraData}
               archiveCache={archiveCache}
+              startMonth={searchParams.startMonth}
+              endMonth={searchParams.endMonth}
             />
             <CompetitionTable
               data={data}
@@ -328,7 +360,8 @@ function APTPageContent() {
               onExcelDownload={() => {
                 const rows = data.map(item => {
                   const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-                  const stats = archiveCache?.calculatedStats?.[key]?.totals?.stages || extraData[key]?.totals?.stages || null;
+                  const stats = getCompetitionStagesSync(key, extraData, archiveCache);
+                  const supplyTotal = getSupplyTotalForItem(item, key, extraData, archiveCache, stats);
                   return {
                     지역: item.SUBSCRPT_AREA_CODE_NM || "-",
                     주택명: item.HOUSE_NM || "-",
@@ -336,7 +369,7 @@ function APTPageContent() {
                     모집공고일: item.RCRIT_PBLANC_DE || "-",
                     청약시작: item.RCEPT_BGNDE || "-",
                     청약종료: item.RCEPT_ENDDE || "-",
-                    공급세대수: item.TOT_SUPLY_HSHLDCO || 0,
+                    공급세대수: supplyTotal,
                     분양가: item.LTTOT_TOP_AMOUNT || 0,
                     특공경쟁률: stats?.special?.rate?.toFixed(2) || "-",
                     "1순위경쟁률": stats?.rank1?.rate?.toFixed(2) || "-",
