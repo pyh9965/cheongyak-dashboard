@@ -7,6 +7,7 @@ interface SearchFormProps {
   searchParams: {
     houseNm: string;
     sidoCode: string;
+    sigungu: string;        // 신규 추가
     houseDtlSecd: string;
     startMonth: string;
     endMonth: string;
@@ -15,6 +16,7 @@ interface SearchFormProps {
   setSearchParams: React.Dispatch<React.SetStateAction<any>>;
   onSubmit: (e: React.FormEvent) => void;
   loading: boolean;
+  sigunguOptions: string[];  // 신규 추가
 }
 
 export default function SearchForm({
@@ -22,6 +24,7 @@ export default function SearchForm({
   setSearchParams,
   onSubmit,
   loading,
+  sigunguOptions,  // 신규 추가
 }: SearchFormProps) {
   // 과거 5년부터 미래 12개월까지 선택 가능
   const currentDate = new Date();
@@ -88,7 +91,11 @@ export default function SearchForm({
           </label>
           <select
             value={searchParams.sidoCode}
-            onChange={(e) => setSearchParams({ ...searchParams, sidoCode: e.target.value })}
+            onChange={(e) => setSearchParams({
+              ...searchParams,
+              sidoCode: e.target.value,
+              sigungu: ""  // 시/도 변경 시 시/군/구 초기화
+            })}
             className={`${styles.select} ${styles.flex1}`}
           >
             <option value="">전체</option>
@@ -111,6 +118,25 @@ export default function SearchForm({
             <option value="50">제주특별자치도</option>
           </select>
         </div>
+
+        {/* 시/군/구 선택 - 시/도 선택 및 옵션 존재 시에만 표시 */}
+        {searchParams.sidoCode && sigunguOptions.length > 0 && (
+          <div className={styles.formRow}>
+            <label className={styles.label}>
+              시/군/구:
+            </label>
+            <select
+              value={searchParams.sigungu}
+              onChange={(e) => setSearchParams({ ...searchParams, sigungu: e.target.value })}
+              className={`${styles.select} ${styles.flex1}`}
+            >
+              <option value="">전체</option>
+              {sigunguOptions.map(sg => (
+                <option key={sg} value={sg}>{sg}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className={styles.formRow}>
           <label className={styles.label}>

@@ -117,3 +117,16 @@ export type DashboardStatsResult = {
   /** 주택유형별 집계 데이터 */
   typeStats: Record<string, TypeStatItem>;
 };
+
+/**
+ * 검색 파라미터 타입
+ */
+export type SearchParams = {
+  houseNm: string;
+  sidoCode: string;
+  sigungu: string;
+  houseDtlSecd: string;
+  startMonth: string;
+  endMonth: string;
+  saleType: string;
+};

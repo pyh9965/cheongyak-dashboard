@@ -57,7 +57,8 @@ function APTPageContent() {
     fetchSingleExtraData,
     extraData,
     archiveCache,
-    cacheLoading
+    cacheLoading,
+    sigunguOptions
   } = useAptData();
 
   // 탭 상태
@@ -233,6 +234,7 @@ function APTPageContent() {
           setSearchParams={setSearchParams}
           onSubmit={handleSubmit}
           loading={loading}
+          sigunguOptions={sigunguOptions}
         />
       </div>
 

@@ -5,10 +5,11 @@
  * API 호출, 캐싱, 필터링 로직을 포함합니다.
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from "next/navigation";
 import { AptInfo, CacheData, DetailCacheData, loadArchiveCache, loadDetailCache, mergeCacheAndApiData } from '@/lib/cache-loader';
 import { buildApplicationRows, NoticeModelApiRow, NoticeCompetitionApiRow, NoticeSpecialApiRow } from '@/lib/detail-data';
+import { parseAddress, extractSigunguList } from '@/lib/address-parser';
 
 // SIDO_CODE_MAP: Record<string, string> 은 현재 미사용되거나, 필터링 로직 내에서만 사용될 예정이면 컴포넌트나 유틸로 이동 가능.
 // 여기서는 필터링 로직 내에서 직접 정의하거나 utils에서 가져오는 것이 좋음.
@@ -63,6 +64,7 @@ export function useAptData() {
   const [searchParams, setSearchParams] = useState({
     houseNm: urlSearchParams.get("houseNm") || "",
     sidoCode: urlSearchParams.get("sidoCode") || "",
+    sigungu: urlSearchParams.get("sigungu") || "",
     houseDtlSecd: urlSearchParams.get("houseDtlSecd") || "",
     startMonth: urlSearchParams.get("startMonth") || defaultStartMonth,
     endMonth: urlSearchParams.get("endMonth") || defaultEndMonth,
@@ -335,26 +337,31 @@ export function useAptData() {
             }
           }
 
-          // 3. 지역 필터링
+          // 3. 지역 필터링 (시/도)
           if (paramsToUse.sidoCode && paramsToUse.sidoCode !== "all") {
              const targetCode = paramsToUse.sidoCode;
              const targetName = SIDO_CODE_MAP[targetCode];
-             
-             // 기본 일치
-             if (item.SUBSCRPT_AREA_CODE === targetCode) return true;
-             
-             // 예외 케이스 처리
-             if (targetCode === "36" && item.SUBSCRPT_AREA_CODE === "338") return true; // 세종
-             if (targetCode === "50" && item.SUBSCRPT_AREA_CODE === "690") return true; // 제주
-             
-             // 일반 지역 코드 확장 (예: 41 -> 410)
-             if (targetCode !== "36" && targetCode !== "50" && 
-                 item.SUBSCRPT_AREA_CODE === targetCode + "0") return true;
-                 
-             // 지역명 일치
-             if (targetName && item.SUBSCRPT_AREA_CODE_NM === targetName) return true;
-             
-             return false;
+
+             // 지역 코드 매칭 여부 확인
+             const matchesSido =
+               item.SUBSCRPT_AREA_CODE === targetCode ||
+               // 예외 케이스: 세종(36->338), 제주(50->690)
+               (targetCode === "36" && item.SUBSCRPT_AREA_CODE === "338") ||
+               (targetCode === "50" && item.SUBSCRPT_AREA_CODE === "690") ||
+               // 일반 지역 코드 확장 (예: 41 -> 410)
+               (targetCode !== "36" && targetCode !== "50" && item.SUBSCRPT_AREA_CODE === targetCode + "0") ||
+               // 지역명 일치
+               (targetName && item.SUBSCRPT_AREA_CODE_NM === targetName);
+
+             if (!matchesSido) return false;
+          }
+
+          // 3-1. 시/군/구 필터링
+          if (paramsToUse.sigungu && paramsToUse.sigungu.trim()) {
+            const parsed = parseAddress(item.HSSPLY_ADRES);
+            if (!parsed || parsed.sigungu !== paramsToUse.sigungu) {
+              return false;
+            }
           }
 
           // 4. 주택 구분 필터링
@@ -388,6 +395,14 @@ export function useAptData() {
     }
   };
 
+  const sigunguOptions = useMemo(() => {
+    if (!searchParams.sidoCode || searchParams.sidoCode === "all") return [];
+    const allData = [...(archiveCache?.lists || []), ...data] as Array<{ HSSPLY_ADRES?: string }>;
+    const result = extractSigunguList(allData, searchParams.sidoCode);
+    console.log(`🏘️ [sigunguOptions] sidoCode=${searchParams.sidoCode}, allData=${allData.length}건, 시군구 ${result.length}개:`, result.slice(0, 5));
+    return result;
+  }, [data, archiveCache?.lists, searchParams.sidoCode]);
+
   return {
     data,
     loading,
@@ -400,6 +415,7 @@ export function useAptData() {
     fetchSingleExtraData,
     extraData,
     archiveCache,
-    cacheLoading
+    cacheLoading,
+    sigunguOptions,
   };
 }
