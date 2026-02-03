@@ -11,6 +11,7 @@ export type AptInfo = {
     RCRIT_PBLANC_DE?: string;
     PRZWNER_PRESNATN_DE?: string;
     RCEPT_ENDDE?: string;
+    coordinates?: [number, number];
     [key: string]: any;
 };
 
@@ -35,6 +36,7 @@ export type CacheData = {
         totalCount: number;
         statsCount?: number;
         detailCount?: number;
+        geocodedCount?: number;
         dateRange: {
             start: string;
             end: string;
