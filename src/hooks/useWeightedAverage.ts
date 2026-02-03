@@ -7,6 +7,7 @@
 
 import { useMemo, useCallback } from 'react';
 import type { AptInfo, CacheData, RateType, WeightedAverageResult } from './types';
+import { getWeightedContribution } from './utils';
 
 /**
  * 다중 아이템의 가중 평균 경쟁률을 계산합니다.
@@ -48,33 +49,19 @@ export function useWeightedAverage(
 
     items.forEach((item) => {
       const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
+      const contribution = getWeightedContribution(
+        item,
+        itemKey,
+        extraData,
+        archiveCache,
+        rateType,
+        { allowRateFallback: true }
+      );
 
-      // Priority 1: extraData (target/request 값이 직접 있음)
-      const extraStats = extraData[itemKey]?.totals;
-      if (extraStats?.stages) {
-        const stageData = extraStats.stages[rateType];
-        const target = stageData?.target || 0;
-        const request = stageData?.request || 0;
-
-        if (target > 0) {
-          totalSupply += target;
-          totalRequest += request || 0;
-          itemCount++;
-          return; // 이 아이템은 extraData에서 처리 완료
-        }
-      }
-
-      // Priority 2: archiveCache (rate만 있으므로 역산 필요)
-      const archiveStats = archiveCache?.calculatedStats?.[itemKey]?.totals;
-      if (archiveStats?.stages && archiveStats.supplyTotal) {
-        const rate = archiveStats.stages[rateType]?.rate;
-
-        if (rate !== null && rate !== undefined && rate > 0) {
-          const supply = archiveStats.supplyTotal;
-          totalSupply += supply;
-          totalRequest += supply * rate; // rate로부터 request 역산
-          itemCount++;
-        }
+      if (contribution.hasData) {
+        totalSupply += contribution.supply;
+        totalRequest += contribution.request;
+        itemCount++;
       }
     });
 
