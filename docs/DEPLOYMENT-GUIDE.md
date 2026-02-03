@@ -21,23 +21,27 @@
 | 항목 | 기술 | 배포 고려사항 |
 |------|------|---------------|
 | 프레임워크 | Next.js 14.2 | SSR/SSG 지원 필요 |
-| 지도 | Kakao Maps SDK, Leaflet | 클라이언트 사이드 전용 |
+| 지도 | Leaflet + OpenStreetMap | 클라이언트 사이드 전용, **API 키 불필요** |
 | 차트 | Chart.js | 클라이언트 사이드 전용 |
-| 데이터 | 정적 JSON (17MB) | CDN 캐싱 필수 |
+| 데이터 | 정적 JSON (~17MB) | CDN 캐싱 필수, **좌표 사전 캐시됨** |
 
 ### 1.2 환경 변수
 
 ```bash
-# 필수 환경 변수
-NEXT_PUBLIC_KAKAO_API_KEY=xxx  # 클라이언트에서 사용 (지도)
-REB_API_KEY=xxx                 # 서버에서만 사용 (API 호출)
+# 선택적 환경 변수 (캐시 생성 시에만 필요)
+KAKAO_API_KEY=xxx               # 서버에서만 사용 (좌표 캐시 생성용, 선택)
+REB_API_KEY=xxx                 # 서버에서만 사용 (청약 데이터 API 호출)
+
+# 참고: NEXT_PUBLIC_KAKAO_API_KEY는 더 이상 필요하지 않음
+# 좌표가 JSON에 사전 캐시되어 있어 런타임 지오코딩 불필요
 ```
 
 ### 1.3 특수 요구사항
 
 - **SSR 비활성화**: 지도/차트 컴포넌트는 `dynamic import`로 CSR 처리됨
-- **정적 데이터**: `public/data/cheongyak-archive.json` (17MB)
-- **외부 API 의존**: 청약홈 API, 카카오 지도 API
+- **정적 데이터**: `public/data/cheongyak-archive.json` (~17MB)
+- **좌표 사전 캐시**: 482건의 아파트 좌표가 JSON에 포함됨 (95.4% 커버리지)
+- **외부 API 의존**: 청약홈 API만 (카카오 API 불필요)
 
 ---
 
@@ -88,14 +92,15 @@ git push -u origin main
 2. GitHub 저장소 선택
 3. 프레임워크 프리셋: **Next.js** (자동 감지됨)
 
-#### Step 4: 환경 변수 설정
+#### Step 4: 환경 변수 설정 (선택)
 
 Vercel 대시보드 → Settings → Environment Variables:
 
-| 변수명 | 값 | 환경 |
-|--------|-----|------|
-| `NEXT_PUBLIC_KAKAO_API_KEY` | 카카오 API 키 | Production, Preview, Development |
-| `REB_API_KEY` | 청약홈 API 키 | Production, Preview, Development |
+| 변수명 | 값 | 환경 | 필수 |
+|--------|-----|------|------|
+| `REB_API_KEY` | 청약홈 API 키 | Production | 선택 (API 호출 시) |
+
+> **참고**: 카카오 API 키는 필요하지 않습니다. 좌표가 JSON에 사전 캐시되어 있습니다.
 
 #### Step 5: 빌드 설정 확인
 
@@ -259,10 +264,9 @@ cd cheongyak-dashboard
 sudo npm ci
 sudo npm run build
 
-# 3. 환경 변수 설정
+# 3. 환경 변수 설정 (선택)
 sudo nano .env.local
-# NEXT_PUBLIC_KAKAO_API_KEY=xxx
-# REB_API_KEY=xxx
+# REB_API_KEY=xxx  # 캐시 갱신 시에만 필요
 
 # 4. PM2로 실행
 pm2 start npm --name "cheongyak" -- start
@@ -339,19 +343,23 @@ pm2 restart cheongyak
 - [ ] TypeScript 에러 없는지 확인 (`npm run lint`)
 - [ ] 테스트 통과 여부 확인
 
-### 6.2 환경 변수
+### 6.2 환경 변수 (선택)
 
-- [ ] `NEXT_PUBLIC_KAKAO_API_KEY` - 카카오 개발자 콘솔에서 발급
-  - 플랫폼 등록: 웹 → 사이트 도메인 추가
-- [ ] `REB_API_KEY` - 청약홈 API 키 (필요 시)
+- [ ] `REB_API_KEY` - 청약홈 API 키 (캐시 갱신 시 필요, 선택)
 
-### 6.3 카카오 API 도메인 등록
+> **참고**: 카카오 API 키는 필요 없습니다. 좌표가 사전 캐시되어 있습니다.
 
-1. [카카오 개발자 콘솔](https://developers.kakao.com) 접속
-2. 내 애플리케이션 → 앱 설정 → 플랫폼
-3. Web 플랫폼 등록:
-   - Vercel: `https://your-project.vercel.app`
-   - 커스텀 도메인: `https://cheongyak.example.com`
+### 6.3 좌표 캐시 확인
+
+> **참고**: 카카오 API 도메인 등록은 **필요하지 않습니다**.
+> 좌표가 JSON에 사전 캐시되어 있어 배포 시 API 호출이 없습니다.
+
+신규 아파트 추가 시 좌표 업데이트:
+```bash
+node scripts/add-coordinates.js
+```
+
+현재 좌표 커버리지: **95.4%** (482/505건)
 
 ### 6.4 빌드 최적화
 
@@ -506,8 +514,8 @@ ANALYZE=true npm run build
 ### 8.3 숨겨진 비용
 
 - **도메인**: 연 $10~15 (선택)
-- **카카오 API**: 무료 (일 300,000회 제한)
 - **청약홈 API**: 무료 (공공 데이터)
+- **지도 API**: 무료 (OpenStreetMap + Leaflet, 좌표 사전 캐시)
 
 ---
 
@@ -532,12 +540,11 @@ git push -u origin main
 # 2. Vercel 연결
 # https://vercel.com/new → GitHub 저장소 선택
 
-# 3. 환경 변수 설정
-# NEXT_PUBLIC_KAKAO_API_KEY=your_key
-
-# 4. 배포 완료! (자동)
+# 3. 배포 완료! (자동, 환경 변수 설정 불필요)
 # https://your-project.vercel.app
 ```
+
+> **참고**: 좌표가 JSON에 캐시되어 있어 API 키 설정 없이 바로 배포됩니다!
 
 ### 9.3 체크포인트
 
@@ -545,17 +552,19 @@ git push -u origin main
 |------|----------|
 | Vercel 가입 | 2분 |
 | GitHub 연결 | 3분 |
-| 환경 변수 설정 | 2분 |
 | 첫 배포 | 3분 |
 | 커스텀 도메인 (선택) | 10분 |
-| **총 소요 시간** | **~10분** |
+| **총 소요 시간** | **~8분** |
+
+> **참고**: 환경 변수 설정이 필요 없어져서 더 빨라졌습니다!
 
 ### 9.4 문제 해결
 
 | 문제 | 해결책 |
 |------|--------|
 | 빌드 실패 | `npm run build` 로컬 테스트, 로그 확인 |
-| 지도 안 뜸 | 카카오 API 도메인 등록 확인 |
+| 지도 안 뜸 | Leaflet CSS 로드 확인, 브라우저 콘솔 에러 확인 |
+| 마커 없음 | `node scripts/add-coordinates.js`로 좌표 캐시 갱신 |
 | 환경 변수 미적용 | Vercel 대시보드에서 재배포 |
 | 404 에러 | `vercel.json` 라우팅 설정 확인 |
 
