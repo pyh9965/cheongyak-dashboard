@@ -145,4 +145,38 @@ test.describe('청약경쟁률 대시보드 체크', () => {
     console.log(`⌨️  포커스된 요소: ${focusedElement}`);
     console.log('✅ 키보드 네비게이션 체크 완료');
   });
+
+  test('지도 마커 표시 체크 (캐시된 좌표 사용)', async ({ page }) => {
+    await page.goto('http://localhost:3000/apt');
+
+    // Wait for page to load
+    await page.waitForLoadState('networkidle');
+
+    // Click on the map tab (지도 탭 클릭)
+    const mapTab = page.locator('button:has-text("지도")');
+    if (await mapTab.isVisible()) {
+      await mapTab.click();
+      console.log('🗺️ 지도 탭 클릭');
+    }
+
+    // Wait for map container to load
+    await page.waitForSelector('.leaflet-container', { timeout: 15000 });
+    console.log('✅ 지도 컨테이너 로드됨');
+
+    // Wait for markers to appear (give time for data loading and rendering)
+    await page.waitForTimeout(5000);
+
+    // Check for region markers (circle markers at zoom < 11)
+    const markers = page.locator('.leaflet-marker-icon');
+    const markerCount = await markers.count();
+
+    console.log(`🗺️ 지도 마커 수: ${markerCount}`);
+
+    // Should have at least some markers from cached coordinates
+    expect(markerCount).toBeGreaterThan(0);
+
+    // Take screenshot
+    await page.screenshot({ path: 'test-results/map-markers.png' });
+    console.log('✅ 지도 마커 스크린샷 저장');
+  });
 });
