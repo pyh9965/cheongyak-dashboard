@@ -74,3 +74,46 @@ export type WeightedAverageResult = {
   /** 집계된 아이템 개수 */
   itemCount: number;
 };
+
+/**
+ * 대시보드용 월별 통계
+ */
+export type MonthlyStatItem = {
+  supply: number;
+  request: number;
+  special: { supply: number; request: number };
+  rank1: { supply: number; request: number };
+  rank2: { supply: number; request: number };
+};
+
+/**
+ * 대시보드용 주택유형별 통계
+ */
+export type TypeStatItem = {
+  supply: number;
+  request: number;
+};
+
+/**
+ * useDashboardStats Hook 반환 타입
+ */
+export type DashboardStatsResult = {
+  /** 총 공급 규모 */
+  supplyTotal: number;
+  /** 총 청약 건수 */
+  requestTotal: number;
+  /** 전체 경쟁률 */
+  rateTotal: number;
+  /** 1순위 경쟁률 */
+  rateRank1: number;
+  /** 2순위 경쟁률 */
+  rateRank2: number;
+  /** 특별공급 경쟁률 */
+  rateSpecial: number;
+  /** 최고 경쟁률 단지 정보 */
+  maxCompetition: { name: string; rate: number };
+  /** 월별 집계 데이터 */
+  monthlyStats: Record<string, MonthlyStatItem>;
+  /** 주택유형별 집계 데이터 */
+  typeStats: Record<string, TypeStatItem>;
+};
