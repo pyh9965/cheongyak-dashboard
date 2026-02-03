@@ -4,9 +4,8 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
-import { parseAddress, cleanAddressForGeocoding } from "@/lib/address-parser";
+import { parseAddress } from "@/lib/address-parser";
 import { getCoordinates as getGeoCoordinates, type Coordinates } from "@/lib/geo-coordinates";
-import { restoreGeocodeCache } from "@/lib/geocoding";
 import { AptInfo, CacheData, CachedStats } from "@/lib/cache-loader";
 import { useCompetitionMapStats, RegionData } from "@/hooks/useCompetitionMapStats";
 import styles from "./CompetitionRateMap.module.css";
@@ -89,14 +88,7 @@ export default function CompetitionRateMap({
     const [isMapReady, setIsMapReady] = useState(false);
     const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
     const [currentZoom, setCurrentZoom] = useState(7);
-    const [individualMarkers, setIndividualMarkers] = useState<Record<string, Coordinates>>({});
     const markerClusterGroupRef = useRef<any>(null);
-    const attemptedGeocodesRef = useRef<Set<string>>(new Set());
-
-    // 지오코딩 캐시 초기화
-    useEffect(() => {
-        restoreGeocodeCache();
-    }, []);
 
     // 날짜 필터링
     const filteredData = useMemo(() => {
@@ -149,62 +141,47 @@ export default function CompetitionRateMap({
         script.async = true;
 
         script.onload = () => {
-            // Kakao SDK 로드 (지오코딩용)
-            const kakaoScript = document.createElement("script");
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_API_KEY}&autoload=false&libraries=services`;
-            kakaoScript.async = true;
+            // MarkerCluster 스크립트 로드
+            const clusterScript = document.createElement("script");
+            clusterScript.src = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js";
+            clusterScript.onload = () => {
+                if (!mapRef.current) return;
 
-            kakaoScript.onload = () => {
-                const kakao = (window as any).kakao;
-                if (kakao) {
-                    kakao.maps.load(() => {
-                        console.log("Kakao Maps SDK loaded");
-                    });
-                }
+                const L = (window as any).L;
+                if (!L || !L.markerClusterGroup) return;
 
-                // MarkerCluster 스크립트 로드
-                const clusterScript = document.createElement("script");
-                clusterScript.src = "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js";
-                clusterScript.onload = () => {
-                    if (!mapRef.current) return;
+                // 지도 초기화
+                const map = L.map(mapRef.current, {
+                    preferCanvas: false
+                }).setView([36.5, 127.5], 7);
 
-                    const L = (window as any).L;
-                    if (!L || !L.markerClusterGroup) return;
+                L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                }).addTo(map);
 
-                    // 지도 초기화
-                    const map = L.map(mapRef.current, {
-                        preferCanvas: false
-                    }).setView([36.5, 127.5], 7);
+                // 줌 레벨 이벤트 핸들러
+                map.on('zoomend', () => {
+                    const zoom = map.getZoom();
+                    setCurrentZoom(zoom);
+                });
 
-                    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-                    }).addTo(map);
-
-                    // 줌 레벨 이벤트 핸들러
-                    map.on('zoomend', () => {
-                        const zoom = map.getZoom();
-                        setCurrentZoom(zoom);
-                    });
-
-                    // 지도 사이즈 조정
-                    setTimeout(() => {
-                        if (leafletMapRef.current) {
-                            try {
-                                leafletMapRef.current.invalidateSize();
-                                console.log("Map invalidateSize called successfully");
-                            } catch (e) {
-                                console.warn("Map invalidateSize in init failed:", e);
-                            }
+                // 지도 사이즈 조정
+                setTimeout(() => {
+                    if (leafletMapRef.current) {
+                        try {
+                            leafletMapRef.current.invalidateSize();
+                            console.log("Map invalidateSize called successfully");
+                        } catch (e) {
+                            console.warn("Map invalidateSize in init failed:", e);
                         }
-                    }, 200);
+                    }
+                }, 200);
 
-                    leafletMapRef.current = map;
-                    setIsMapReady(true);
-                    console.log("지도 & 클러스터 초기화 완료");
-                };
-                document.body.appendChild(clusterScript);
+                leafletMapRef.current = map;
+                setIsMapReady(true);
+                console.log("지도 & 클러스터 초기화 완료");
             };
-            document.body.appendChild(kakaoScript);
+            document.body.appendChild(clusterScript);
         };
         document.body.appendChild(script);
 
@@ -235,84 +212,8 @@ export default function CompetitionRateMap({
         }
 
         // 충분한 지연 후 마커 추가
-        // 지오코딩 (줌 레벨 11 이상일 때) - SDK Geocoder 사용
-        const checkAndGeocode = async () => {
-            if (currentZoom < 11 || data.length === 0) return;
-
-            // 좌표가 없는 항목 식별
-            const targets = data.filter(item => {
-                const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-                return !individualMarkers[key] && item.HSSPLY_ADRES;
-            });
-
-            if (targets.length === 0) return;
-
-            // 상위 30개만 우선 처리 (속도 향상)
-            const batchTargets = targets.filter(item => {
-                const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-                return !attemptedGeocodesRef.current.has(key);
-            }).slice(0, 30);
-
-            if (batchTargets.length === 0) return;
-
-            const kakao = (window as any).kakao;
-
-            if (!kakao || !kakao.maps || !kakao.maps.services) {
-                console.warn("Kakao Services 라이브러리가 로드되지 않았습니다.");
-                return;
-            }
-
-            const geocoder = new kakao.maps.services.Geocoder();
-
-            console.log(`📍 SDK 지오코딩 시작: ${batchTargets.length}건`);
-
-            // 순차적 처리 (Rate Limit 방지)
-            for (const item of batchTargets) {
-                const rawAddr = item.HSSPLY_ADRES;
-                if (!rawAddr) continue;
-
-                // 시도한 것으로 표시 (성공하든 실패하든 다시 시도 안 함)
-                const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-                attemptedGeocodesRef.current.add(key);
-
-                // 1차: 원본 주소에서 괄호만 제거하고 시도 (정확한 번지 유지)
-                const addrWithoutParen = rawAddr.replace(/\([^)]*\)/g, "").trim();
-
-                geocoder.addressSearch(addrWithoutParen, (result: any[], status: any) => {
-                    if (status === kakao.maps.services.Status.OK && result[0]) {
-                        const coords: Coordinates = [parseFloat(result[0].y), parseFloat(result[0].x)];
-                        setIndividualMarkers(prev => ({ ...prev, [key]: coords }));
-                        console.log(`✅ 지오코딩 성공 (1차): ${addrWithoutParen}`);
-                    } else {
-                        // 2차: 정제된 주소로 재시도 (동 단위)
-                        const cleanedAddr = cleanAddressForGeocoding(rawAddr);
-                        if (!cleanedAddr) {
-                            console.warn(`지오코딩 실패: 정제 불가 - ${rawAddr}`);
-                            return;
-                        }
-
-                        geocoder.addressSearch(cleanedAddr, (result2: any[], status2: any) => {
-                            if (status2 === kakao.maps.services.Status.OK && result2[0]) {
-                                const coords: Coordinates = [parseFloat(result2[0].y), parseFloat(result2[0].x)];
-                                setIndividualMarkers(prev => ({ ...prev, [key]: coords }));
-                                console.log(`✅ 지오코딩 성공 (2차 폴백): ${cleanedAddr}`);
-                            } else {
-                                console.warn(`지오코딩 실패 (${status2}): ${cleanedAddr} (원본: ${rawAddr})`);
-                            }
-                        });
-                    }
-                });
-
-                // 딜레이 없음 (SDK 내부적으로 처리하기를 기대하거나, 필요시 Promise로 감싸서 delay 추가)
-            }
-        };
-
-        // 충분한 지연 후 마커 추가 및 지오코딩
         const timer = setTimeout(() => {
             if (!leafletMapRef.current) return;
-
-            // 지오코딩 실행
-            checkAndGeocode();
 
             // 기존 마커 제거
             markersRef.current.forEach((marker) => {
@@ -396,9 +297,9 @@ export default function CompetitionRateMap({
                 data.forEach(item => {
                     const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
 
-                    // 개별 좌표 우선, 없으면 주소 파싱하여 지역 좌표 사용
-                    let coords: Coordinates | null = individualMarkers[itemKey];
-                    if (!coords) {
+                    // Use pre-cached coordinates from item, fallback to district coordinates
+                    let coords: Coordinates | null = item.coordinates || null;
+                    if (!coords && item.HSSPLY_ADRES) {
                         const parsed = parseAddress(item.HSSPLY_ADRES);
                         if (parsed) {
                             coords = getGeoCoordinates(parsed.fullKey);
@@ -484,7 +385,7 @@ export default function CompetitionRateMap({
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [isMapReady, regionData, currentZoom, data, individualMarkers, rateType, archiveCache]);
+    }, [isMapReady, regionData, currentZoom, data, rateType, archiveCache]);
 
     return (
         <div className={styles.container}>
