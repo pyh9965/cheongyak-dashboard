@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
-import { parseAddress } from "@/lib/address-parser";
+import { parseAddress, cleanAddressForGeocoding } from "@/lib/address-parser";
 import { getCoordinates as getGeoCoordinates, type Coordinates } from "@/lib/geo-coordinates";
 import { restoreGeocodeCache } from "@/lib/geocoding";
 import { AptInfo, CacheData, CachedStats } from "@/lib/cache-loader";
@@ -268,23 +268,38 @@ export default function CompetitionRateMap({
 
             // 순차적 처리 (Rate Limit 방지)
             for (const item of batchTargets) {
-                const addr = item.HSSPLY_ADRES;
-                if (!addr) continue;
+                const rawAddr = item.HSSPLY_ADRES;
+                if (!rawAddr) continue;
 
                 // 시도한 것으로 표시 (성공하든 실패하든 다시 시도 안 함)
                 const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
                 attemptedGeocodesRef.current.add(key);
 
-                geocoder.addressSearch(addr, (result: any[], status: any) => {
+                // 1차: 원본 주소에서 괄호만 제거하고 시도 (정확한 번지 유지)
+                const addrWithoutParen = rawAddr.replace(/\([^)]*\)/g, "").trim();
+
+                geocoder.addressSearch(addrWithoutParen, (result: any[], status: any) => {
                     if (status === kakao.maps.services.Status.OK && result[0]) {
                         const coords: Coordinates = [parseFloat(result[0].y), parseFloat(result[0].x)];
-
-                        setIndividualMarkers(prev => ({
-                            ...prev,
-                            [key]: coords
-                        }));
+                        setIndividualMarkers(prev => ({ ...prev, [key]: coords }));
+                        console.log(`✅ 지오코딩 성공 (1차): ${addrWithoutParen}`);
                     } else {
-                        console.warn(`지오코딩 실패 (${status}): ${addr}`);
+                        // 2차: 정제된 주소로 재시도 (동 단위)
+                        const cleanedAddr = cleanAddressForGeocoding(rawAddr);
+                        if (!cleanedAddr) {
+                            console.warn(`지오코딩 실패: 정제 불가 - ${rawAddr}`);
+                            return;
+                        }
+
+                        geocoder.addressSearch(cleanedAddr, (result2: any[], status2: any) => {
+                            if (status2 === kakao.maps.services.Status.OK && result2[0]) {
+                                const coords: Coordinates = [parseFloat(result2[0].y), parseFloat(result2[0].x)];
+                                setIndividualMarkers(prev => ({ ...prev, [key]: coords }));
+                                console.log(`✅ 지오코딩 성공 (2차 폴백): ${cleanedAddr}`);
+                            } else {
+                                console.warn(`지오코딩 실패 (${status2}): ${cleanedAddr} (원본: ${rawAddr})`);
+                            }
+                        });
                     }
                 });
 
