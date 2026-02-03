@@ -18,8 +18,11 @@ function normalizeModelNo(modelNo: any): string {
 
 export type ApiValue = string | number | null | undefined;
 
+export type NoticeDetailRow = Record<string, unknown>;
+
 // API 응답 타입
 export type NoticeModelApiRow = {
+
   MODEL_NO?: ApiValue;
   HOUSE_TY?: ApiValue;
   SUPLY_AR?: ApiValue;
@@ -53,6 +56,7 @@ export type NoticeSpecialApiRow = {
   INSTT_RECOMEND_DCSN_CNT?: ApiValue;
   INSTT_RECOMEND_HSHLDCO?: ApiValue;
   INSTT_RECOMEND_PREPAR_CNT?: ApiValue;
+  INSTT_RECOMEND_PREPAR_CO?: ApiValue; // 추가: 필드명 변동 대응
   CRSPAREA_LFE_FRST_CNT?: ApiValue;
   CRSPAREA_MNYCH_CNT?: ApiValue;
   CRSPAREA_NWBB_NWBBSHR_CNT?: ApiValue;
@@ -199,7 +203,10 @@ export function buildApplicationRows(
     ].filter((key) => key.length > 0);
     if (keys.length === 0) return;
 
-    const instt = toInt(item.INSTT_RECOMEND_DCSN_CNT) + toInt(item.INSTT_RECOMEND_PREPAR_CNT);
+    // 기관추천 = 확정 + 예비 (필드명 CNT/CO 모두 대응)
+    const instt = toInt(item.INSTT_RECOMEND_DCSN_CNT) + 
+                  toInt(item.INSTT_RECOMEND_PREPAR_CNT) + 
+                  toInt(item.INSTT_RECOMEND_PREPAR_CO);
     const newlywed =
       toInt(item.CRSPAREA_MNYCH_CNT) +
       toInt(item.ETC_AREA_MNYCH_CNT) +

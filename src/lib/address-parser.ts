@@ -57,6 +57,13 @@ const SIDO_NORMALIZE: Record<string, string> = {
   "제주": "제주",
 };
 
+export function normalizeSidoName(value: string | null | undefined): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return SIDO_NORMALIZE[trimmed] || trimmed;
+}
+
 /**
  * 주소 문자열을 파싱하여 시/도, 시/군/구 정보를 추출합니다.
  * @param address - 주소 문자열 (예: "경상남도 양산시 물금읍 범어리 502-3번지 일원")

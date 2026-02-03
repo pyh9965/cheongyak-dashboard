@@ -38,6 +38,32 @@ function isResultAnnounced(przwnerPresnatnDe) {
     return announceDate < new Date();
 }
 
+// 접수 종료일이 지났는지 확인 (경쟁률 데이터 수집용)
+function isApplicationClosed(item) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 오늘 00:00:00
+
+    // 2순위 접수 종료일 확인
+    const rank2End = item.GNRL_RNK2_ETC_AREA_ENDDE || item.GNRL_RNK2_CRSPAREA_ENDDE || item.RCEPT_ENDDE;
+    if (rank2End) {
+        const endDate = parseDate(rank2End);
+        if (endDate && endDate <= today) {
+            return true; // 2순위 접수 종료 (당일도 포함)
+        }
+    }
+
+    // 1순위 접수 종료일 확인
+    const rank1End = item.GNRL_RNK1_ETC_AREA_ENDDE || item.GNRL_RNK1_CRSPAREA_ENDDE || item.RCEPT_ENDDE;
+    if (rank1End) {
+        const endDate = parseDate(rank1End);
+        if (endDate && endDate <= today) {
+            return true; // 1순위 접수 종료 (2순위 데이터는 없을 수 있음)
+        }
+    }
+
+    return false;
+}
+
 // API 호출 헬퍼
 async function fetchApi(baseUrl, endpoint, params = {}) {
     const url = new URL(`${baseUrl}/${endpoint}`);
@@ -456,7 +482,8 @@ async function fetchDetailsForItem(item) {
     const pblancNo = item.PBLANC_NO;
 
     if (!houseManageNo || !pblancNo) return null;
-    if (!isResultAnnounced(item.PRZWNER_PRESNATN_DE)) return null;
+    // 접수 종료 여부로 확인 (당첨자 발표 전에도 경쟁률 데이터 수집 가능)
+    if (!isApplicationClosed(item)) return null;
 
     try {
         // Fetch all necessary datasets
@@ -571,7 +598,8 @@ async function main() {
     const uniqueCandidates = Array.from(new Map(allCandidates.map(item => [`${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`, item])).values());
 
     const targetItems = uniqueCandidates.filter(item => {
-        if (!isResultAnnounced(item.PRZWNER_PRESNATN_DE)) return false;
+        // 접수 종료일 기준으로 변경 (경쟁률은 접수 후 바로 확인 가능)
+        if (!isApplicationClosed(item)) return false;
 
         // 상세 파일 존재 여부 확인
         const detailPath = path.join(DATA_DIR, 'details', `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}.json`);

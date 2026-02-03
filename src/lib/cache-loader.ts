@@ -202,49 +202,59 @@ export function mergeCacheAndApiData(
 
     // 검색 범위 파싱
     const searchStart = startMonth ? parseDate(startMonth.replace('-', '') + '01') : null;
-    const searchEndYear = endMonth ? parseInt(endMonth.split('-')[0]) : null;
-    const searchEndMonth = endMonth ? parseInt(endMonth.split('-')[1]) : null;
-    const searchEnd = searchEndYear && searchEndMonth
-        ? new Date(searchEndYear, searchEndMonth, 0) // 해당 월의 마지막 날
-        : null;
+    const searchEnd = endMonth ? (() => {
+        const [year, month] = endMonth.split('-').map(Number);
+        // 해당 월의 마지막 날 계산 (month는 1-12이므로 +1하면 다음달 0일 = 해당 월 마지막 날)
+        const lastDay = new Date(year, month, 0).getDate();
+        return new Date(year, month - 1, lastDay, 23, 59, 59, 999);
+    })() : null;
 
-    let result: AptInfo[] = [];
+    // Map으로 중복 관리 (최신 데이터 우선 전략)
+    const itemMap = new Map<string, AptInfo>();
 
-    // 1. 캐시 데이터에서 필터링
-    if (!searchStart || (cacheEndDate && searchStart <= cacheEndDate)) {
-        const cachedItems = cacheData.lists.filter(item => {
-            const itemDate = parseDate(item.RCRIT_PBLANC_DE || '');
-            if (!itemDate) return false;
+    // 1. 캐시 데이터 추가 (검색 범위 내)
+    let cacheCount = 0;
+    cacheData.lists.forEach(item => {
+        const itemDate = parseDate(item.RCRIT_PBLANC_DE || '');
+        if (!itemDate) return;
 
-            // 검색 범위 확인
-            if (searchStart && itemDate < searchStart) return false;
-            if (searchEnd && itemDate > searchEnd) return false;
+        // 검색 범위 확인
+        if (searchStart && itemDate < searchStart) return;
+        if (searchEnd && itemDate > searchEnd) return;
 
-            // 캐시 범위 내인지 확인
-            if (cacheEndDate && itemDate <= cacheEndDate) return true;
-
-            return false;
-        });
-
-        result = [...cachedItems];
-        console.log(`📦 캐시에서 ${cachedItems.length}건 로드`);
-    }
-
-    // 2. API 데이터 병합 (중복 제거 - ID 기준)
-    const cacheIds = new Set(result.map(i => `${i.HOUSE_MANAGE_NO}_${i.PBLANC_NO}`));
-
-    const newApiItems = apiData.filter(item => {
-        const id = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-        // 캐시에 이미 있는 데이터는 API 결과에서 제외 (캐시 우선)
-        // 만약 API 데이터가 더 최신이라 덮어쓰고 싶다면 로직을 반대로 해야 하지만,
-        // 현재는 캐시의 통계 연결성을 위해 캐시 데이터를 유지합니다.
-        return !cacheIds.has(id);
+        const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
+        itemMap.set(key, item);
+        cacheCount++;
     });
 
-    result = [...result, ...newApiItems];
-    console.log(`🔄 API에서 ${newApiItems.length}건 추가 (총 ${result.length}건)`);
+    console.log(`📦 캐시에서 ${cacheCount}건 로드 (검색 범위 내)`);
 
-    return result;
+    // 2. API 데이터 병합
+    // - 캐시 범위를 벗어난 항목: API 데이터 우선 (최신 경쟁률 반영)
+    // - 캐시 범위 내 항목: 캐시 데이터 유지 (통계 연결성)
+    let apiAddedCount = 0;
+    let apiUpdatedCount = 0;
+
+    apiData.forEach(item => {
+        const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
+        const itemDate = parseDate(item.RCRIT_PBLANC_DE || '');
+
+        // API 데이터가 캐시 범위를 벗어났거나, 캐시에 없으면 추가/업데이트
+        if (itemDate && cacheEndDate && itemDate > cacheEndDate) {
+            // 캐시 범위를 벗어난 최신 데이터 → API 우선
+            itemMap.set(key, item);
+            apiUpdatedCount++;
+        } else if (!itemMap.has(key)) {
+            // 캐시에 없는 항목 → API 추가
+            itemMap.set(key, item);
+            apiAddedCount++;
+        }
+        // 그 외: 캐시 데이터 유지 (통계 연결성)
+    });
+
+    console.log(`🔄 API 데이터 병합: 신규 ${apiAddedCount}건, 업데이트 ${apiUpdatedCount}건 (총 ${itemMap.size}건)`);
+
+    return Array.from(itemMap.values());
 }
 
 /**
