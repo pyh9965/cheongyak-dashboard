@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from "next/navigation";
-import { AptInfo, CacheData, DetailCacheData, loadArchiveCache, loadDetailCache, mergeCacheAndApiData } from '@/lib/cache-loader';
+import { AptInfo, CacheData, DetailCacheData, loadArchiveCache, loadDetailCache, mergeCacheAndApiData, getStaticDetail } from '@/lib/cache-loader';
 import { buildApplicationRows, NoticeModelApiRow, NoticeCompetitionApiRow, NoticeSpecialApiRow } from '@/lib/detail-data';
 import { parseAddress, extractSigunguList } from '@/lib/address-parser';
 
@@ -78,49 +78,24 @@ export function useAptData() {
   const [archiveCache, setArchiveCache] = useState<CacheData | null>(null);
   const [cacheLoading, setCacheLoading] = useState(false);
   
-  // localStorage 캐싱 관련
-  const CACHE_KEY = "cheongyak_extraData_cache";
-  const CACHE_VERSION = "v4"; // 버전 업그레이드: 날짜 필터 버그 수정
-  const CACHE_EXPIRY_DAYS = 3; // 만료 기간 단축: 7일 → 3일 (최신 경쟁률 반영)
-
-  const [extraData, setExtraData] = useState<Record<string, any>>(() => {
+  // localStorage 캐싱 비활성화 - 정적 캐시 파일 사용
+  // 기존 localStorage 캐시 정리 (용량 확보)
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const { data, timestamp, version } = parsed;
-          const now = Date.now();
-          const expiryMs = CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-
-          if (version === CACHE_VERSION && now - timestamp <= expiryMs) {
-            return data;
-          }
-        }
+        localStorage.removeItem("cheongyak_extraData_cache");
+        console.log("🧹 [Cache] localStorage 정리 완료 - 정적 캐시 사용");
       } catch (e) {
-        console.warn("Cache init failed:", e);
+        // ignore
       }
     }
-    return {};
-  });
+  }, []);
+
+  const [extraData, setExtraData] = useState<Record<string, any>>({});
 
   const extraDataRef = useRef(extraData);
   useEffect(() => {
     extraDataRef.current = extraData;
-  }, [extraData]);
-
-  // 캐시 저장
-  useEffect(() => {
-    if (typeof window === 'undefined' || Object.keys(extraData).length === 0) return;
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        data: extraData,
-        timestamp: Date.now(),
-        version: CACHE_VERSION
-      }));
-    } catch (e) {
-      console.warn("Failed to save cache:", e);
-    }
   }, [extraData]);
 
   // 상세 데이터 fetch
@@ -130,14 +105,29 @@ export function useAptData() {
     const key = `${houseManageNo}_${pblancNo}`;
     if (fetchingPool.current.has(key)) return;
 
-    const cached = extraDataRef.current[key];
-    if (cached?.totals?.stages?.total?.rate !== undefined && cached?.totals?.stages?.total?.rate !== null && cached.totals.stages.total.rate > 0) {
-      return;
-    }
-
     fetchingPool.current.add(key);
 
     try {
+      // 1. 항상 정적 캐시 파일을 먼저 확인 (가장 빠르고 신뢰성 높음)
+      const staticData = await getStaticDetail(houseManageNo, pblancNo);
+      if (staticData?.totals?.stages?.rank1?.request !== undefined &&
+          staticData?.totals?.stages?.rank1?.request !== null &&
+          staticData.totals.stages.rank1.request > 0) {
+        console.log(`⚡ [Static Cache] Hit: ${key}, 1순위 접수: ${staticData.totals.stages.rank1.request}명`);
+        setExtraData(prev => ({ ...prev, [key]: staticData }));
+        return;
+      }
+
+      // 2. 메모리 캐시 확인 (정적 캐시가 없거나 불완전한 경우)
+      const cached = extraDataRef.current[key];
+      if (cached?.totals?.stages?.rank1?.request !== undefined &&
+          cached?.totals?.stages?.rank1?.request !== null &&
+          cached.totals.stages.rank1.request > 0) {
+        console.log(`📦 [Memory Cache] Hit: ${key}`);
+        return;
+      }
+
+      // 2. 정적 캐시가 없으면 API 호출
       const params = new URLSearchParams({
         dataset: "noticeModel,noticeCompetition,noticeSpecial",
         houseManageNo,
@@ -154,11 +144,19 @@ export function useAptData() {
         json.datasets?.noticeSpecial || []
       );
 
-      if (result.totals) {
+      // 3. API 결과가 유효하면 사용 (접수건수 기준으로 검증)
+      if (result.totals?.stages?.rank1?.request !== undefined &&
+          result.totals?.stages?.rank1?.request !== null &&
+          result.totals.stages.rank1.request > 0) {
+        console.log(`🌐 [API] Success: ${key}, 1순위 접수: ${result.totals.stages.rank1.request}명`);
+        setExtraData(prev => ({ ...prev, [key]: result }));
+      } else if (result.totals) {
+        // API 결과가 불완전하면 불완전한 데이터라도 저장 (UI에서 "-" 표시)
+        console.log(`⚠️ [API] Incomplete data: ${key}`);
         setExtraData(prev => ({ ...prev, [key]: result }));
       }
     } catch (err) {
-      console.error(`Failed to fetch extra data for ${key}:`, err);
+      console.error(`❌ [API Error] ${key}:`, err);
     } finally {
       fetchingPool.current.delete(key);
     }
@@ -172,13 +170,24 @@ export function useAptData() {
       setArchiveCache(archive);
       
       if (detail?.details) {
+        console.log(`📦 [Detail Cache] 병합 시작: ${Object.keys(detail.details).length}건`);
         setExtraData(prev => {
           const merged = { ...prev };
+          let mergedCount = 0;
           for (const [key, value] of Object.entries(detail.details)) {
-            if (!merged[key] || !merged[key]?.totals?.stages?.total?.rate) {
-              merged[key] = value;
+            const detailData = value as any;
+            // 기존 데이터가 없거나 접수건수가 없으면 병합
+            if (!merged[key] ||
+                !merged[key]?.totals?.stages?.rank1?.request ||
+                merged[key]?.totals?.stages?.rank1?.request === 0) {
+              // 새 데이터에 유효한 접수건수가 있으면 병합
+              if (detailData?.totals?.stages?.rank1?.request > 0) {
+                merged[key] = detailData;
+                mergedCount++;
+              }
             }
           }
+          console.log(`✅ [Detail Cache] 병합 완료: ${mergedCount}건 추가`);
           return merged;
         });
       }
