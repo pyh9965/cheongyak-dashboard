@@ -335,6 +335,14 @@
   color: #6b7280;
 }
 
+/* Choropleth 범례 색상 사각형 */
+.legendColorSquare {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
 /* 반응형 */
 @media (max-width: 768px) {
   .filters {

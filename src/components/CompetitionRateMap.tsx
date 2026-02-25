@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
@@ -38,6 +38,27 @@ interface CompetitionRateMapProps {
     onItemClick: (item: AptInfo) => void;
 }
 
+// GeoJSON 시/도명 → 정규화 키 매핑
+const GEOJSON_NAME_TO_KEY: Record<string, string> = {
+    "서울특별시": "서울",
+    "부산광역시": "부산",
+    "대구광역시": "대구",
+    "인천광역시": "인천",
+    "광주광역시": "광주",
+    "대전광역시": "대전",
+    "울산광역시": "울산",
+    "세종특별자치시": "세종",
+    "경기도": "경기",
+    "강원도": "강원",
+    "충청북도": "충북",
+    "충청남도": "충남",
+    "전라북도": "전북",
+    "전라남도": "전남",
+    "경상북도": "경북",
+    "경상남도": "경남",
+    "제주특별자치도": "제주",
+};
+
 function getRateColor(rate: number | null): string {
     if (rate === null) return "#9CA3AF";
     if (rate < 1) return "#3B82F6";
@@ -45,6 +66,15 @@ function getRateColor(rate: number | null): string {
     if (rate < 20) return "#EAB308";
     if (rate < 50) return "#F97316";
     return "#EF4444";
+}
+
+function getRateFillColor(rate: number | null): string {
+    if (rate === null) return "#E5E7EB";
+    if (rate < 1) return "#93C5FD";
+    if (rate < 5) return "#86EFAC";
+    if (rate < 20) return "#FDE047";
+    if (rate < 50) return "#FDBA74";
+    return "#FCA5A5";
 }
 
 function getCircleRadius(supply: number): number {
@@ -71,6 +101,58 @@ function parseDate(dateStr: string): Date | null {
     );
 }
 
+// GeoJSON 폴리곤의 중심점(centroid) 계산
+function getPolygonCentroid(feature: any): [number, number] | null {
+    try {
+        const geometry = feature.geometry;
+        if (!geometry) return null;
+
+        let allCoords: number[][] = [];
+
+        if (geometry.type === "Polygon") {
+            allCoords = geometry.coordinates[0];
+        } else if (geometry.type === "MultiPolygon") {
+            // 가장 큰 폴리곤의 중심을 사용
+            let maxArea = 0;
+            let largestRing: number[][] = [];
+            geometry.coordinates.forEach((polygon: number[][][]) => {
+                const ring = polygon[0];
+                // 면적 근사 계산
+                let area = 0;
+                for (let i = 0; i < ring.length - 1; i++) {
+                    area += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+                }
+                area = Math.abs(area / 2);
+                if (area > maxArea) {
+                    maxArea = area;
+                    largestRing = ring;
+                }
+            });
+            allCoords = largestRing;
+        }
+
+        if (allCoords.length === 0) return null;
+
+        // Centroid 계산
+        let sumLat = 0, sumLng = 0;
+        allCoords.forEach(coord => {
+            sumLng += coord[0];
+            sumLat += coord[1];
+        });
+        return [sumLat / allCoords.length, sumLng / allCoords.length];
+    } catch {
+        return null;
+    }
+}
+
+// 시/도별 라벨 위치 보정 (폴리곤 centroid가 부정확한 경우)
+const LABEL_OFFSET: Record<string, [number, number]> = {
+    "서울": [0.02, 0],
+    "인천": [0, -0.05],
+    "세종": [0, 0],
+    "제주": [0, 0],
+};
+
 export default function CompetitionRateMap({
     data,
     extraData,
@@ -89,6 +171,11 @@ export default function CompetitionRateMap({
     const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
     const [currentZoom, setCurrentZoom] = useState(7);
     const markerClusterGroupRef = useRef<any>(null);
+
+    // GeoJSON 관련 refs
+    const geoJsonLayerRef = useRef<any>(null);
+    const geoJsonDataRef = useRef<any>(null);
+    const labelMarkersRef = useRef<any[]>([]);
 
     // 날짜 필터링
     const filteredData = useMemo(() => {
@@ -113,11 +200,29 @@ export default function CompetitionRateMap({
         currentZoom
     );
 
+    // regionData를 key로 빠르게 조회할 수 있는 Map
+    const regionDataMap = useMemo(() => {
+        const map = new Map<string, RegionData>();
+        regionData.forEach(r => map.set(r.key, r));
+        return map;
+    }, [regionData]);
+
     const selectedRegionItems = useMemo(() => {
         if (!selectedRegion) return [];
         const region = regionData.find((r) => r.key === selectedRegion);
         return region?.items || [];
     }, [selectedRegion, regionData]);
+
+    // GeoJSON 데이터 로드 (한 번만)
+    useEffect(() => {
+        if (geoJsonDataRef.current) return;
+        fetch("/data/geo/skorea-provinces-geo.json")
+            .then(res => res.json())
+            .then(data => {
+                geoJsonDataRef.current = data;
+            })
+            .catch(err => console.error("GeoJSON 로드 실패:", err));
+    }, []);
 
     // Leaflet 초기화 (vanilla)
     useEffect(() => {
@@ -170,7 +275,6 @@ export default function CompetitionRateMap({
                     if (leafletMapRef.current) {
                         try {
                             leafletMapRef.current.invalidateSize();
-                            console.log("Map invalidateSize called successfully");
                         } catch (e) {
                             console.warn("Map invalidateSize in init failed:", e);
                         }
@@ -179,7 +283,6 @@ export default function CompetitionRateMap({
 
                 leafletMapRef.current = map;
                 setIsMapReady(true);
-                console.log("지도 & 클러스터 초기화 완료");
             };
             document.body.appendChild(clusterScript);
         };
@@ -195,6 +298,18 @@ export default function CompetitionRateMap({
                 document.body.removeChild(script);
             }
         };
+    }, []);
+
+    // Choropleth 레이어 제거 함수
+    const removeChoropleth = useCallback(() => {
+        if (geoJsonLayerRef.current && leafletMapRef.current) {
+            try { leafletMapRef.current.removeLayer(geoJsonLayerRef.current); } catch (e) { }
+            geoJsonLayerRef.current = null;
+        }
+        labelMarkersRef.current.forEach(m => {
+            try { m.remove(); } catch (e) { }
+        });
+        labelMarkersRef.current = [];
     }, []);
 
     // 마커 업데이트
@@ -221,6 +336,9 @@ export default function CompetitionRateMap({
             });
             markersRef.current = [];
 
+            // 기존 Choropleth 제거
+            removeChoropleth();
+
             // 클러스터 그룹 초기화 (필요시)
             if (currentZoom >= 11 && !markerClusterGroupRef.current && (window as any).L?.markerClusterGroup) {
                 const L = (window as any).L;
@@ -234,70 +352,170 @@ export default function CompetitionRateMap({
                 markerClusterGroupRef.current.clearLayers();
             }
 
-            if (currentZoom < 11) {
-                // 1. 지역별 마커 (줌 < 11)
+            if (currentZoom < 9) {
+                // ============================================
+                // 1. Choropleth 지도 (줌 < 9, 시/도 레벨)
+                // ============================================
                 if (markerClusterGroupRef.current) {
-                    leafletMapRef.current.removeLayer(markerClusterGroupRef.current); // 클러스터 제거
+                    try { leafletMapRef.current.removeLayer(markerClusterGroupRef.current); } catch (e) { }
                 }
 
-                regionData.forEach((region) => {
-                    if (!region.coordinates) return;
+                const geoData = geoJsonDataRef.current;
+                if (!geoData) {
+                    // GeoJSON 아직 로드 안됨 — fallback으로 circle 마커 사용
+                    renderCircleMarkers(L, regionData);
+                    return;
+                }
 
-                    const color = getRateColor(region.avgRate);
-                    const radius = getCircleRadius(region.totalSupply);
+                // GeoJSON Choropleth 레이어 생성
+                const geoLayer = L.geoJSON(geoData, {
+                    style: (feature: any) => {
+                        const name = feature?.properties?.name || "";
+                        const key = GEOJSON_NAME_TO_KEY[name] || name;
+                        const region = regionDataMap.get(key);
+                        const rate = region?.avgRate ?? null;
+                        const fillColor = getRateFillColor(rate);
+                        const borderColor = getRateColor(rate);
 
-                    try {
-                        const L = (window as any).L;
-                        const latLng = L.latLng(region.coordinates[0], region.coordinates[1]);
+                        return {
+                            fillColor: fillColor,
+                            weight: 2,
+                            opacity: 1,
+                            color: '#ffffff',
+                            fillOpacity: region ? 0.65 : 0.3,
+                        };
+                    },
+                    onEachFeature: (feature: any, layer: any) => {
+                        const name = feature?.properties?.name || "";
+                        const key = GEOJSON_NAME_TO_KEY[name] || name;
+                        const region = regionDataMap.get(key);
 
-                        const iconHtml = `<div style="
-                            width: ${radius * 2}px;
-                            height: ${radius * 2}px;
-                            background-color: ${color};
-                            opacity: 0.7;
-                            border: 2px solid #fff;
-                            border-radius: 50%;
-                            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-                        "></div>`;
+                        // 툴팁
+                        const tooltipContent = region
+                            ? `<strong>${key}</strong><br/>청약 ${region.itemCount}건<br/>공급 ${region.totalSupply.toLocaleString()}세대<br/>평균 경쟁률: ${formatRate(region.avgRate)}`
+                            : `<strong>${key}</strong><br/>데이터 없음`;
 
-                        const icon = L.divIcon({
-                            html: iconHtml,
-                            className: "",
-                            iconSize: [radius * 2, radius * 2],
-                            iconAnchor: [radius, radius]
+                        layer.bindTooltip(tooltipContent, {
+                            direction: "center",
+                            className: "choropleth-tooltip",
+                            sticky: true,
                         });
 
-                        const marker = L.marker(latLng, { icon });
-
-                        marker.bindTooltip(
-                            `<strong>${region.key}</strong><br/>청약 ${region.itemCount}건<br/>공급 ${region.totalSupply.toLocaleString()}세대<br/>평균 경쟁률: ${formatRate(region.avgRate)}`,
-                            { direction: "top", offset: [0, -radius] }
-                        );
-
-                        // 지역 마커 클릭 시 해당 지역으로 줌
-                        marker.on("click", () => {
-                            const nextZoom = currentZoom < 9 ? 10 : 13;
-                            leafletMapRef.current.setView(latLng, nextZoom);
-                            setSelectedRegion(region.key);
+                        // 호버 효과
+                        layer.on("mouseover", (e: any) => {
+                            const target = e.target;
+                            target.setStyle({
+                                weight: 3,
+                                color: '#374151',
+                                fillOpacity: 0.85,
+                            });
+                            target.bringToFront();
                         });
 
-                        marker.addTo(leafletMapRef.current);
-                        markersRef.current.push(marker);
-                    } catch (e) {
-                        console.error("Failed to add region marker:", region.key, e);
+                        layer.on("mouseout", (e: any) => {
+                            geoLayer.resetStyle(e.target);
+                        });
+
+                        // 클릭 시 줌인
+                        layer.on("click", () => {
+                            const bounds = layer.getBounds();
+                            leafletMapRef.current.fitBounds(bounds, { padding: [20, 20] });
+                            setSelectedRegion(key);
+                        });
                     }
                 });
-            } else {
-                // 2. 개별 아파트 마커 (줌 >= 11)
-                const L = (window as any).L;
-                const clusterGroup = markerClusterGroupRef.current;
 
+                geoLayer.addTo(leafletMapRef.current);
+                geoJsonLayerRef.current = geoLayer;
+
+                // 라벨 마커 추가 (각 시/도 중심에 이름 + 경쟁률)
+                geoData.features.forEach((feature: any) => {
+                    const name = feature?.properties?.name || "";
+                    const key = GEOJSON_NAME_TO_KEY[name] || name;
+                    const region = regionDataMap.get(key);
+
+                    // centroid 계산
+                    let centroid = getPolygonCentroid(feature);
+                    if (!centroid) return;
+
+                    // 라벨 위치 보정
+                    const offset = LABEL_OFFSET[key] || [0, 0];
+                    centroid = [centroid[0] + offset[0], centroid[1] + offset[1]];
+
+                    const rate = region?.avgRate ?? null;
+                    const rateText = rate !== null ? rate.toFixed(2) + ":1" : "";
+                    const color = getRateColor(rate);
+                    const itemCount = region?.itemCount || 0;
+
+                    const labelHtml = `<div style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 1px;
+                        pointer-events: none;
+                    ">
+                        ${rateText ? `<span style="
+                            font-size: 15px;
+                            font-weight: 800;
+                            color: ${color};
+                            text-shadow: 1px 1px 2px rgba(255,255,255,0.9), -1px -1px 2px rgba(255,255,255,0.9), 1px -1px 2px rgba(255,255,255,0.9), -1px 1px 2px rgba(255,255,255,0.9);
+                            letter-spacing: -0.5px;
+                        ">${rateText}</span>` : ''}
+                        <span style="
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: #374151;
+                            background: rgba(255,255,255,0.85);
+                            padding: 1px 6px;
+                            border-radius: 3px;
+                            white-space: nowrap;
+                        ">${key}</span>
+                        ${itemCount > 0 ? `<span style="
+                            font-size: 9px;
+                            color: #6b7280;
+                            background: rgba(255,255,255,0.75);
+                            padding: 0 4px;
+                            border-radius: 2px;
+                        ">${itemCount}건</span>` : ''}
+                    </div>`;
+
+                    const icon = L.divIcon({
+                        html: labelHtml,
+                        className: "",
+                        iconSize: [80, 50],
+                        iconAnchor: [40, 25],
+                    });
+
+                    const labelMarker = L.marker(centroid, {
+                        icon,
+                        interactive: false,
+                        zIndexOffset: 1000,
+                    });
+
+                    labelMarker.addTo(leafletMapRef.current);
+                    labelMarkersRef.current.push(labelMarker);
+                });
+
+            } else if (currentZoom < 11) {
+                // ============================================
+                // 2. 시/군/구 Circle 마커 (줌 9-10)
+                // ============================================
+                if (markerClusterGroupRef.current) {
+                    try { leafletMapRef.current.removeLayer(markerClusterGroupRef.current); } catch (e) { }
+                }
+
+                renderCircleMarkers(L, regionData);
+
+            } else {
+                // ============================================
+                // 3. 개별 아파트 마커 (줌 >= 11)
+                // ============================================
+                const clusterGroup = markerClusterGroupRef.current;
                 if (clusterGroup) clusterGroup.addTo(leafletMapRef.current);
 
                 data.forEach(item => {
                     const itemKey = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
 
-                    // Use pre-cached coordinates from item, fallback to district coordinates
                     let coords: Coordinates | null = item.coordinates || null;
                     if (!coords && item.HSSPLY_ADRES) {
                         const parsed = parseAddress(item.HSSPLY_ADRES);
@@ -306,18 +524,16 @@ export default function CompetitionRateMap({
                         }
                     }
 
-                    if (!coords) return; // 좌표가 전혀 없음
+                    if (!coords) return;
 
-                    // 공통 유틸리티를 사용하여 경쟁률 조회 (우선순위: extraData > archiveCache)
                     const stages = getCompetitionStagesSync(itemKey, extraData, archiveCache);
                     let rate: number | null = null;
-                    
+
                     if (stages) {
-                         // @ts-ignore
-                         rate = stages[rateType]?.rate;
+                        // @ts-ignore
+                        rate = stages[rateType]?.rate;
                     }
 
-                    // 선택된 경쟁률 타입에 데이터가 없으면 마커 표시 안 함 (총 경쟁률은 제외 - 위치 정보 제공 목적)
                     if ((rate === null || rate === undefined) && rateType !== 'total') return;
 
                     const color = getRateColor(rate);
@@ -340,13 +556,12 @@ export default function CompetitionRateMap({
                         const icon = L.divIcon({
                             html: iconHtml,
                             className: "",
-                            iconSize: [null, 24], // Auto width
+                            iconSize: [null, 24],
                             iconAnchor: [20, 12]
                         });
 
                         const marker = L.marker([coords[0], coords[1]], { icon });
 
-                        // 주택명 라벨 표시
                         marker.bindTooltip(
                             `<div style="font-size:11px; font-weight:bold; color:#333; white-space:nowrap;">${item.HOUSE_NM}</div>`,
                             {
@@ -385,7 +600,57 @@ export default function CompetitionRateMap({
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [isMapReady, regionData, currentZoom, data, rateType, archiveCache]);
+
+        // Circle 마커 렌더링 함수 (시/군/구 레벨 + fallback)
+        function renderCircleMarkers(L: any, regions: RegionData[]) {
+            regions.forEach((region) => {
+                if (!region.coordinates) return;
+
+                const color = getRateColor(region.avgRate);
+                const radius = getCircleRadius(region.totalSupply);
+
+                try {
+                    const latLng = L.latLng(region.coordinates[0], region.coordinates[1]);
+
+                    const iconHtml = `<div style="
+                        width: ${radius * 2}px;
+                        height: ${radius * 2}px;
+                        background-color: ${color};
+                        opacity: 0.7;
+                        border: 2px solid #fff;
+                        border-radius: 50%;
+                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                    "></div>`;
+
+                    const icon = L.divIcon({
+                        html: iconHtml,
+                        className: "",
+                        iconSize: [radius * 2, radius * 2],
+                        iconAnchor: [radius, radius]
+                    });
+
+                    const marker = L.marker(latLng, { icon });
+
+                    marker.bindTooltip(
+                        `<strong>${region.key}</strong><br/>청약 ${region.itemCount}건<br/>공급 ${region.totalSupply.toLocaleString()}세대<br/>평균 경쟁률: ${formatRate(region.avgRate)}`,
+                        { direction: "top", offset: [0, -radius] }
+                    );
+
+                    marker.on("click", () => {
+                        const nextZoom = currentZoom < 9 ? 10 : 13;
+                        leafletMapRef.current.setView(latLng, nextZoom);
+                        setSelectedRegion(region.key);
+                    });
+
+                    marker.addTo(leafletMapRef.current);
+                    markersRef.current.push(marker);
+                } catch (e) {
+                    console.error("Failed to add region marker:", region.key, e);
+                }
+            });
+        }
+
+    }, [isMapReady, regionData, regionDataMap, currentZoom, data, rateType, archiveCache, removeChoropleth]);
 
     return (
         <div className={styles.container}>
@@ -468,7 +733,7 @@ export default function CompetitionRateMap({
                 </div>
             </div>
 
-            {/* 선택된 지역 패널 (캐시 기반 데이터도 사용할 수 있도록 수정 필요하지만, 현재는 extraData만 사용하는 것으로 유지하거나 개선 필요) */}
+            {/* 선택된 지역 패널 */}
             {
                 selectedRegion && selectedRegionItems.length > 0 && (
                     <div className={styles.regionPanel}>
