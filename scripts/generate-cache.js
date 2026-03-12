@@ -128,7 +128,7 @@ async function fetchNoticeList() {
     const allData = [];
     let page = 1;
     let hasMore = true;
-    const endDate = '20251231';
+    const endDate = '20261231';
 
     while (hasMore && page <= 100) {
         console.log(`  - 페이지 ${page} 조회 중...`);
@@ -370,6 +370,14 @@ async function main() {
         console.log(`✅ ${Object.keys(calculatedStats).length}건 통계 계산 완료`);
 
         // 3. 캐시 데이터 구성
+        const actualStartDate = lists.reduce((min, item) => {
+            const d = item.RCRIT_PBLANC_DE || '';
+            return d && d < min ? d : min;
+        }, '99999999');
+        const actualEndDate = lists.reduce((max, item) => {
+            const d = item.RCRIT_PBLANC_DE || '';
+            return d && d > max ? d : max;
+        }, '');
         const cacheData = {
             lists,
             calculatedStats, // 미리 계산된 통계
@@ -380,8 +388,8 @@ async function main() {
                 statsCount: Object.keys(calculatedStats).length,
                 geocodedCount: geocodeResults.geocodedCount,
                 dateRange: {
-                    start: '2020-01-01',
-                    end: '2025-12-31',
+                    start: actualStartDate !== '99999999' ? actualStartDate : '',
+                    end: actualEndDate || '',
                 },
             },
         };

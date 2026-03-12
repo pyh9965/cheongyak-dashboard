@@ -235,6 +235,14 @@ function APTPageContent() {
           onSubmit={handleSubmit}
           loading={loading}
           sigunguOptions={sigunguOptions}
+          dataAvailableFrom={(() => {
+            const raw = archiveCache?.metadata?.dateRange?.start;
+            if (!raw) return undefined;
+            // Handles both YYYYMMDD and YYYY-MM-DD formats → YYYY-MM
+            const clean = raw.replace(/-/g, '');
+            if (clean.length >= 6) return `${clean.substring(0, 4)}-${clean.substring(4, 6)}`;
+            return undefined;
+          })()}
         />
       </div>
 

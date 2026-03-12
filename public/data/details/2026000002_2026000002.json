@@ -1,0 +1,121 @@
+{
+  "rows": [
+    {
+      "modelNo": "1",
+      "houseType": "059.9884A",
+      "areaSqm": 84.4024,
+      "areaPyeong": 25.531611107750013,
+      "priceThousand": 61801,
+      "supplyGeneral": 74,
+      "supplySpecial": 92,
+      "supplyTotal": 166,
+      "specialRequests": {
+        "기관추천": 0,
+        "신혼부부": 3,
+        "생애최초": 44,
+        "다자녀가구": 7,
+        "노부모부양": 0,
+        "기타": 0,
+        "이전기관": 0,
+        "영구임대": 0
+      },
+      "stages": {
+        "special": {
+          "target": 92,
+          "request": 54,
+          "rate": 0.5869565217391305,
+          "remaining": 38,
+          "breakdown": {
+            "기관추천": 17,
+            "신혼부부": 17,
+            "생애최초": 15,
+            "다자녀": 38,
+            "노부모부양": 5,
+            "기타": 0
+          }
+        },
+        "rank1": {
+          "target": 112,
+          "request": 146,
+          "rate": 1.3035714285714286,
+          "remaining": -34,
+          "localRequest": 120,
+          "etcRequest": 26
+        },
+        "rank2": {
+          "target": 112,
+          "request": 42,
+          "rate": 0.375,
+          "remaining": 70,
+          "localRequest": 29,
+          "etcRequest": 13
+        },
+        "total": {
+          "target": 112,
+          "request": 188,
+          "rate": 1.6785714285714286,
+          "remaining": -76
+        }
+      }
+    }
+  ],
+  "missingSpecialRequests": false,
+  "totals": {
+    "modelNo": "TOTAL",
+    "houseType": "합계",
+    "areaSqm": null,
+    "areaPyeong": null,
+    "priceThousand": null,
+    "supplyGeneral": 74,
+    "supplySpecial": 92,
+    "supplyTotal": 166,
+    "specialRequests": {
+      "기관추천": 0,
+      "신혼부부": 3,
+      "생애최초": 44,
+      "다자녀가구": 7,
+      "노부모부양": 0,
+      "기타": 0,
+      "이전기관": 0,
+      "영구임대": 0
+    },
+    "stages": {
+      "special": {
+        "target": 92,
+        "request": 54,
+        "rate": 0.5869565217391305,
+        "remaining": 38,
+        "breakdown": {
+          "기관추천": 17,
+          "신혼부부": 17,
+          "생애최초": 15,
+          "다자녀": 38,
+          "노부모부양": 5,
+          "기타": 0
+        }
+      },
+      "rank1": {
+        "target": 112,
+        "request": 146,
+        "rate": 1.3035714285714286,
+        "remaining": -34,
+        "localRequest": 120,
+        "etcRequest": 26
+      },
+      "rank2": {
+        "target": 112,
+        "request": 42,
+        "rate": 0.375,
+        "remaining": 70,
+        "localRequest": 29,
+        "etcRequest": 13
+      },
+      "total": {
+        "target": 112,
+        "request": 188,
+        "rate": 1.6785714285714286,
+        "remaining": -76
+      }
+    }
+  }
+}

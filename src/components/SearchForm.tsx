@@ -17,6 +17,7 @@ interface SearchFormProps {
   onSubmit: (e: React.FormEvent) => void;
   loading: boolean;
   sigunguOptions: string[];  // 신규 추가
+  dataAvailableFrom?: string; // 데이터 제공 시작 월 (YYYY-MM 형식)
 }
 
 export default function SearchForm({
@@ -25,6 +26,7 @@ export default function SearchForm({
   onSubmit,
   loading,
   sigunguOptions,  // 신규 추가
+  dataAvailableFrom,
 }: SearchFormProps) {
   // 과거 5년부터 미래 12개월까지 선택 가능
   const currentDate = new Date();
@@ -69,6 +71,21 @@ export default function SearchForm({
             ))}
           </select>
         </div>
+
+        {dataAvailableFrom && searchParams.startMonth < dataAvailableFrom && (
+          <div style={{
+            padding: '8px 12px',
+            backgroundColor: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '6px',
+            fontSize: '12px',
+            color: '#856404',
+            marginTop: '4px',
+            marginBottom: '4px',
+          }}>
+            데이터는 {dataAvailableFrom.replace('-', '년 ')}월부터 제공됩니다. 이전 기간은 조회 결과가 없을 수 있습니다.
+          </div>
+        )}
 
         <div className={styles.formRow}>
           <label className={styles.label}>

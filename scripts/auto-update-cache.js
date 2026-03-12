@@ -7,11 +7,15 @@
  * - 캐시에 병합하여 저장
  */
 
-require('dotenv').config();
+require('dotenv').config({ path: '.env.local' });
+require('dotenv').config(); // .env fallback
 const fs = require('fs');
 const path = require('path');
 
 const API_KEY = process.env.REB_API_KEY;
+const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY;
+const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
+const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const DETAIL_BASE = 'https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1';
 const COMPET_BASE = 'https://api.odcloud.kr/api/ApplyhomeInfoCmpetRtSvc/v1';
 
@@ -62,6 +66,678 @@ function isApplicationClosed(item) {
     }
 
     return false;
+}
+
+// Kakao REST API 주소 검색
+async function kakaoAddressSearch(query) {
+    try {
+        const url = 'https://dapi.kakao.com/v2/local/search/address.json?query=' + encodeURIComponent(query);
+        const res = await fetch(url, { headers: { 'Authorization': 'KakaoAK ' + KAKAO_REST_API_KEY } });
+        if (!res.ok) return null;
+        const body = await res.json();
+        if (body.documents && body.documents.length > 0) {
+            return [parseFloat(body.documents[0].y), parseFloat(body.documents[0].x)];
+        }
+    } catch (e) {}
+    return null;
+}
+
+// Kakao REST API 키워드 검색 (fallback)
+async function kakaoKeywordSearch(query) {
+    try {
+        const url = 'https://dapi.kakao.com/v2/local/search/keyword.json?query=' + encodeURIComponent(query);
+        const res = await fetch(url, { headers: { 'Authorization': 'KakaoAK ' + KAKAO_REST_API_KEY } });
+        if (!res.ok) return null;
+        const body = await res.json();
+        if (body.documents && body.documents.length > 0) {
+            // 아파트/주거 카테고리 우선 선택
+            const aptResult = body.documents.find(d =>
+                d.category_name && (d.category_name.includes('아파트') || d.category_name.includes('주거'))
+            );
+            const doc = aptResult || body.documents[0];
+            return [parseFloat(doc.y), parseFloat(doc.x)];
+        }
+    } catch (e) {}
+    return null;
+}
+
+// Naver 로컬 검색 API — 도로명주소 추출용 (Kakao 실패 시 폴백)
+async function naverLocalSearch(query) {
+    if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET) return null;
+    try {
+        const url = 'https://openapi.naver.com/v1/search/local.json?query='
+            + encodeURIComponent(query) + '&display=5';
+        const res = await fetch(url, {
+            headers: {
+                'X-Naver-Client-Id': NAVER_CLIENT_ID,
+                'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
+            }
+        });
+        if (!res.ok) return null;
+        const body = await res.json();
+        if (!body.items || body.items.length === 0) return null;
+
+        // 아파트/주거 카테고리 우선
+        const aptItem = body.items.find(item => {
+            const cat = item.category || '';
+            return cat.includes('아파트') || cat.includes('주거') || cat.includes('부동산');
+        });
+        const bestItem = aptItem || body.items[0];
+
+        // roadAddress 우선, 없으면 address
+        return bestItem.roadAddress || bestItem.address || null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// DuckDuckGo 웹검색 — 지번주소 추출용 (API 키 불필요, 로컬 검색 실패 시 폴백)
+async function webSearchAddress(query) {
+    try {
+        const url = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query + ' 주소');
+        const res = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (!res.ok) return null;
+        const html = await res.text();
+
+        // HTML 태그 및 HTML 엔티티 제거
+        const text = html.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/g, ' ');
+
+        // 지번주소 패턴: "시도 시군구 동/읍/면/리 번지(-번지)"
+        const jibunPattern = /((?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s+\S+[시군구](?:\s+\S+[구])?\s+[가-힣]+[동읍면리]\s+\d{1,5}(?:-\d{1,5})?)/;
+
+        const match = text.match(jibunPattern);
+        return match ? match[1] : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// 시도별 중심 좌표 및 허용 반경(km) — 교차 검증용
+// 반경은 시도 내 가장 먼 시군구(여수, 백령도, 삼척 등)를 포함하도록 여유롭게 설정
+const SIDO_BOUNDS = {
+    "서울": { lat: 37.5665, lng: 126.9780, radius: 40 },
+    "부산": { lat: 35.1796, lng: 129.0756, radius: 50 },
+    "대구": { lat: 35.8714, lng: 128.6014, radius: 60 },
+    "인천": { lat: 37.4563, lng: 126.7052, radius: 210 },  // 백령도 포함
+    "광주": { lat: 35.1595, lng: 126.8526, radius: 40 },
+    "대전": { lat: 36.3504, lng: 127.3845, radius: 40 },
+    "울산": { lat: 35.5384, lng: 129.3114, radius: 50 },
+    "세종": { lat: 36.4800, lng: 127.2890, radius: 40 },
+    "경기": { lat: 37.2750, lng: 127.0094, radius: 120 },
+    "강원": { lat: 37.8854, lng: 127.7300, radius: 170 },  // 삼척/동해/정선 포함
+    "충북": { lat: 36.6359, lng: 127.4913, radius: 120 },  // 제천/단양 포함
+    "충남": { lat: 36.6588, lng: 126.6728, radius: 120 },  // 금산 포함
+    "전북": { lat: 35.8204, lng: 127.1087, radius: 100 },
+    "전남": { lat: 34.8161, lng: 126.4629, radius: 150 },  // 여수/광양/구례 포함
+    "경북": { lat: 36.5760, lng: 128.5056, radius: 160 },  // 경주/울진 포함
+    "경남": { lat: 35.2376, lng: 128.6924, radius: 120 },
+    "제주": { lat: 33.4890, lng: 126.4983, radius: 60 },
+};
+
+const SIDO_NORMALIZE_MAP = {
+    "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구",
+    "인천광역시": "인천", "광주광역시": "광주", "대전광역시": "대전",
+    "울산광역시": "울산", "세종특별자치시": "세종", "경기도": "경기",
+    "강원특별자치도": "강원", "강원도": "강원", "충청북도": "충북",
+    "충청남도": "충남", "전라북도": "전북", "전북특별자치도": "전북",
+    "전라남도": "전남", "경상북도": "경북", "경상남도": "경남",
+    "제주특별자치도": "제주",
+};
+
+const SIDO_REGEX = /^(서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)/;
+
+function normalizeSido(str) {
+    if (!str) return null;
+    return SIDO_NORMALIZE_MAP[str.trim()] || null;
+}
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// 좌표가 해당 항목의 시도/시군구 범위 내인지 교차 검증
+function validateCoordinates(coords, item) {
+    if (!coords) return false;
+    const [lat, lng] = coords;
+
+    // 한국 범위 체크
+    if (lat < 33 || lat > 39 || lng < 124 || lng > 132) return false;
+
+    // 시도 추출 (주소 또는 SUBSCRPT_AREA_CODE_NM에서)
+    const addrSidoMatch = (item.HSSPLY_ADRES || '').match(SIDO_REGEX);
+    const addrSido = addrSidoMatch ? normalizeSido(addrSidoMatch[1]) : null;
+    const codeSido = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+    const sido = addrSido || codeSido;
+
+    if (!sido || !SIDO_BOUNDS[sido]) return true; // 검증 불가시 통과
+
+    const bound = SIDO_BOUNDS[sido];
+    const dist = haversineDistance(lat, lng, bound.lat, bound.lng);
+    return dist <= bound.radius;
+}
+
+// 시도코드명 → 정식 시도명 매핑 (SUBSCRPT_AREA_CODE_NM 보완용)
+const AREA_CODE_TO_FULL_SIDO = {
+    "서울": "서울특별시", "부산": "부산광역시", "대구": "대구광역시",
+    "인천": "인천광역시", "광주": "광주광역시", "대전": "대전광역시",
+    "울산": "울산광역시", "세종": "세종특별자치시", "경기": "경기도",
+    "강원": "강원특별자치도", "충북": "충청북도", "충남": "충청남도",
+    "전북": "전북특별자치도", "전남": "전라남도", "경북": "경상북도",
+    "경남": "경상남도", "제주": "제주특별자치도",
+};
+
+// 5단계 Kakao 지오코딩: 괄호주소 → 정제주소 → 시군구+동 → 시도+단지명 → 단지명 → 시군구만(최후 수단)
+async function geocodeAddress(address, houseName, item) {
+    if (!address) return null;
+
+    // === 사전 정리: 시도명 오타 보정 ===
+    address = address
+        .replace(/충천남도/g, '충청남도')
+        .replace(/충천북도/g, '충청북도')
+        .replace(/강원자치도/g, '강원특별자치도')
+        .replace(/전북자치도/g, '전북특별자치도');
+
+    // === 0단계: 괄호 안에 완전한 주소가 있으면 우선 사용 ===
+    // "인천 검단신도시 AB13블록 (인천광역시 서구 원당동 1063-2 일원)"
+    // → 괄호 안의 "인천광역시 서구 원당동 1063-2" 사용
+    const fullAddrInParen = address.match(
+        /\(([^)]*(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청|전라|전북|경상|제주)[^)]*(?:시|도|구|군)[^)]*[동읍면리][^)]*)\)/
+    );
+    let baseAddress = address;
+    if (fullAddrInParen) {
+        baseAddress = fullAddrInParen[1].trim();
+    }
+
+    // === 1단계: 정제 후 Kakao 주소 검색 ===
+    let cleaned = baseAddress;
+    // 괄호에서 동 이름 추출 후 괄호 제거
+    const dongInParen = cleaned.match(/\(([가-힣]+[동읍면리])\)/);
+    const dongFromParen = dongInParen ? dongInParen[1] : null;
+    cleaned = cleaned.replace(/\([^)]*\)/g, '').trim();
+
+    // 블록/BL 패턴 제거 (순서 중요: 넓은 패턴부터)
+    cleaned = cleaned
+        .replace(/\s*[A-Za-z]*-?\d*[A-Za-z]*블[럭록]/gi, '')
+        .replace(/\s*[A-Za-z]{0,3}-?\d{0,3}BL\b/gi, '')
+        // 신도시/지구/택지 제거
+        .replace(/[가-힣]+신도시/g, '')
+        .replace(/[가-힣]+도시개발사업/g, '')
+        .replace(/[가-힣]*택지개발[가-힣]*/g, '')
+        .replace(/[가-힣]*공공주택지구/g, '')
+        .replace(/행정중심복합도시/g, '')
+        .replace(/\d+-?\d*생활권/g, '')
+        // 지구명 패턴 제거 (예: "동탄2지구", "세교2지구", "장항지구")
+        .replace(/[가-힣]+\d*지구/g, '')
+        // 기타 개발사업 관련 패턴
+        .replace(/[가-힣]*뉴타운/g, '')
+        .replace(/공동주택용지/g, '')
+        .replace(/공급촉진지구/g, '')
+        .replace(/도시개발구역/g, '')
+        .replace(/\s+내\s+/g, ' ')
+        // 번지/일원/필지 정리
+        .replace(/\s+\d+(-\d+)?번지.*$/g, '')
+        .replace(/\s+일원.*$/g, '')
+        .replace(/\s+외\s+\d+필지.*$/g, '')
+        .replace(/\s+일대.*$/g, '')
+        // 연속 공백 정리
+        .replace(/\s+/g, ' ').trim();
+
+    // 정제 후 동이 사라졌으면 괄호에서 추출한 동 추가
+    if (dongFromParen && !/[가-힣]+[동읍면리]/.test(cleaned)) {
+        cleaned = `${cleaned} ${dongFromParen}`;
+    }
+
+    if (cleaned.length >= 5) {
+        let result = await kakaoAddressSearch(cleaned);
+        if (result) return result;
+    }
+
+    // === 2단계: 시도+시군구+동 추출 (원본 주소 전체에서) ===
+    const distMatch = address.match(/((?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s+\S+[시군구](?:\s+\S+[구])?\s+\S+[동읍면리])/);
+    if (distMatch) {
+        let result = await kakaoAddressSearch(distMatch[1]);
+        if (result) return result;
+    }
+
+    // === 2.5단계: SUBSCRPT_AREA_CODE_NM + 단지명으로 키워드 검색 ===
+    // 주소에 시도 정보가 없는 경우 (예: "장항지구 A-5블록", "안심뉴타운 B3BL")
+    if (item && item.SUBSCRPT_AREA_CODE_NM && houseName) {
+        const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+        const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+        if (fullSido) {
+            let result = await kakaoKeywordSearch(`${fullSido} ${houseName}`);
+            if (result) return result;
+        }
+    }
+
+    // === 3단계: 단지명 키워드 검색 ===
+    if (houseName) {
+        let result = await kakaoKeywordSearch(houseName);
+        if (result) return result;
+    }
+
+    // === 3.5단계: Naver 로컬 검색으로 도로명주소 찾기 → Kakao 지오코딩 ===
+    if (houseName) {
+        const naverAddr = await naverLocalSearch(houseName + ' 아파트');
+        if (naverAddr) {
+            let result = await kakaoAddressSearch(naverAddr);
+            if (result && validateCoordinates(result, item)) return result;
+        }
+    }
+
+    // === 3.7단계: Naver 웹검색으로 지번주소 추출 → Kakao 지오코딩 ===
+    if (houseName) {
+        const webAddr = await webSearchAddress(houseName + ' 아파트');
+        if (webAddr) {
+            let result = await kakaoAddressSearch(webAddr);
+            if (result && validateCoordinates(result, item)) return result;
+        }
+    }
+
+    // === 4단계: 시도+시군구만으로 검색 (최후 수단 — 시군구 중심점 폴백) ===
+    // 정확도가 가장 낮으므로 단지명 키워드 검색 이후에 시도
+    const sigunguMatch = address.match(/((?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s+\S+[시군구](?:\s+\S+[구])?)/);
+    if (sigunguMatch) {
+        let result = await kakaoAddressSearch(sigunguMatch[1]);
+        if (result) return result;
+    }
+
+    return null;
+}
+
+// 좌표 없는 항목들에 대해 일괄 지오코딩 (교차 검증 포함)
+async function geocodeMissingItems(lists) {
+    const missing = lists.filter(item => !item.coordinates && item.HSSPLY_ADRES);
+    if (missing.length === 0) {
+        console.log('📍 좌표 변환 필요 없음 (모두 보유)');
+        return 0;
+    }
+
+    if (!KAKAO_REST_API_KEY) {
+        console.log('⚠️ KAKAO_REST_API_KEY 미설정 — 좌표 변환 건너뜀');
+        return 0;
+    }
+
+    console.log(`📍 좌표 미보유 ${missing.length}건 Kakao 지오코딩 시작...`);
+    let success = 0;
+    let rejected = 0;
+
+    for (let i = 0; i < missing.length; i++) {
+        const item = missing[i];
+        const coords = await geocodeAddress(item.HSSPLY_ADRES, item.HOUSE_NM, item);
+        if (coords && validateCoordinates(coords, item)) {
+            item.coordinates = coords;
+            success++;
+        } else if (coords) {
+            console.log(`  ⚠️ 좌표 검증 실패 (시도 불일치): ${item.HOUSE_NM} | ${item.HSSPLY_ADRES}`);
+            rejected++;
+        }
+
+        if ((i + 1) % 50 === 0) {
+            console.log(`  진행: ${i + 1}/${missing.length} (성공: ${success}, 검증실패: ${rejected})`);
+        }
+
+        // Kakao API rate limit 안전 마진
+        await new Promise(resolve => setTimeout(resolve, 120));
+    }
+
+    console.log(`✅ 좌표 변환 완료: ${success}/${missing.length}건 성공${rejected > 0 ? `, ${rejected}건 검증실패` : ''}`);
+    return success;
+}
+
+// 아파트 기본명 추출 (재공급/취소분/사전청약 등 접미어 제거)
+function getBaseHouseName(name) {
+    return (name || '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\d+단지$/g, '')
+        .replace(/(조합원\s*)?취소분.*$/g, '')
+        .replace(/본청약.*$/g, '')
+        .replace(/사전청약.*$/g, '')
+        .replace(/추가\s*(모집|입주자)?.*$/g, '')
+        .replace(/잔여세대.*$/g, '')
+        .replace(/\d+회차.*$/g, '')
+        .replace(/\s+/g, ' ').trim();
+}
+
+// 클러스터 수정 검증: 클러스터 중심에서 500m 이상 떨어져야 유효
+function isValidClusterFix(coords, clusterCenter, item) {
+    if (!validateCoordinates(coords, item)) return false;
+    const dist = haversineDistance(coords[0], coords[1], clusterCenter[0], clusterCenter[1]);
+    return dist >= 0.5; // 500m 이상 (시군구 중심점 재반환 방지)
+}
+
+// 결정론적 좌표 분산 (Jitter) — 클러스터 중심에서 원형 배치
+function jitterCoordinate(center, index, total) {
+    const radius = 0.003; // ~300m
+    const angle = (2 * Math.PI * index) / total;
+    return [
+        center[0] + radius * Math.cos(angle),
+        center[1] + radius * Math.sin(angle)
+    ];
+}
+
+// 클러스터 항목 재지오코딩: Kakao "단지명 아파트" 키워드 검색
+async function resolveClusterItem(item, clusterCenter) {
+    const houseName = item.HOUSE_NM;
+    if (!houseName) return null;
+
+    // 단계 1: "단지명 아파트" 키워드 검색 (아파트 카테고리 우선)
+    let coords = await kakaoKeywordSearch(houseName + ' 아파트');
+    if (coords && isValidClusterFix(coords, clusterCenter, item)) return coords;
+    await new Promise(resolve => setTimeout(resolve, 120));
+
+    // 단계 2: "시도 단지명 아파트" 키워드 검색
+    const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+    const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+    if (fullSido) {
+        coords = await kakaoKeywordSearch(fullSido + ' ' + houseName + ' 아파트');
+        if (coords && isValidClusterFix(coords, clusterCenter, item)) return coords;
+        await new Promise(resolve => setTimeout(resolve, 120));
+    }
+
+    // 단계 3: 단지명만 키워드 검색
+    coords = await kakaoKeywordSearch(houseName);
+    if (coords && isValidClusterFix(coords, clusterCenter, item)) return coords;
+
+    // === 단계 4: Naver 로컬 검색으로 도로명주소 찾기 → Kakao 지오코딩 ===
+    await new Promise(resolve => setTimeout(resolve, 200));
+    let foundAddress = await naverLocalSearch(houseName + ' 아파트');
+    if (foundAddress) {
+        coords = await kakaoAddressSearch(foundAddress);
+        if (coords && isValidClusterFix(coords, clusterCenter, item)) {
+            console.log(`    🌐 Naver 검색 성공: ${houseName} → "${foundAddress}"`);
+            return coords;
+        }
+    }
+
+    // 단계 4-2: "시도 단지명 아파트" Naver 검색
+    if (fullSido) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        foundAddress = await naverLocalSearch(fullSido + ' ' + houseName + ' 아파트');
+        if (foundAddress) {
+            coords = await kakaoAddressSearch(foundAddress);
+            if (coords && isValidClusterFix(coords, clusterCenter, item)) {
+                console.log(`    🌐 Naver 검색 성공: ${houseName} → "${foundAddress}"`);
+                return coords;
+            }
+        }
+    }
+
+    // === 단계 5: Naver 웹검색으로 지번주소 추출 → Kakao 지오코딩 ===
+    await new Promise(resolve => setTimeout(resolve, 200));
+    foundAddress = await webSearchAddress(houseName + ' 아파트');
+    if (foundAddress) {
+        coords = await kakaoAddressSearch(foundAddress);
+        if (coords && isValidClusterFix(coords, clusterCenter, item)) {
+            console.log(`    🔍 웹검색 성공: ${houseName} → "${foundAddress}"`);
+            return coords;
+        }
+    }
+
+    return null;
+}
+
+// 기존 좌표의 시도 불일치 검사 및 중복 좌표 클러스터 감지 후 재지오코딩
+async function fixInvalidCoordinates(lists) {
+    if (!KAKAO_REST_API_KEY) {
+        console.log('⚠️ KAKAO_REST_API_KEY 미설정 — 좌표 검증 건너뜀');
+        return 0;
+    }
+
+    let totalFixed = 0;
+
+    // === 1단계: 시도 범위 불일치 의심 항목 재지오코딩 (기존 로직 유지) ===
+    const sidoSuspects = lists.filter(item =>
+        item.coordinates && item.HSSPLY_ADRES && !validateCoordinates(item.coordinates, item)
+    );
+
+    if (sidoSuspects.length > 0) {
+        console.log(`🔧 시도 불일치 ${sidoSuspects.length}건 재지오코딩...`);
+        for (let i = 0; i < sidoSuspects.length; i++) {
+            const item = sidoSuspects[i];
+            const oldCoords = item.coordinates;
+            const newCoords = await geocodeAddress(item.HSSPLY_ADRES, item.HOUSE_NM, item);
+            if (newCoords && validateCoordinates(newCoords, item)) {
+                item.coordinates = newCoords;
+                totalFixed++;
+            } else {
+                item.coordinates = oldCoords; // 검증 실패 시 기존값 유지
+            }
+            await new Promise(resolve => setTimeout(resolve, 120));
+        }
+        console.log(`  ✅ 시도 불일치 수정: ${totalFixed}건`);
+    }
+
+    // === 2단계: 중복 좌표 클러스터 감지 (3+ 항목 동일 좌표) ===
+    const coordMap = new Map(); // "lat,lng" → [items]
+    lists.forEach(item => {
+        if (!item.coordinates) return;
+        const key = `${item.coordinates[0]},${item.coordinates[1]}`;
+        if (!coordMap.has(key)) coordMap.set(key, []);
+        coordMap.get(key).push(item);
+    });
+
+    let clusterFixed = 0;
+    let clusterJittered = 0;
+    let clusterSkipped = 0;
+
+    for (const [key, items] of coordMap) {
+        if (items.length < 3) continue;
+
+        // 고유 기본명 추출 — 같은 아파트 재공급/취소분은 같은 좌표가 정상
+        const baseNames = new Set(items.map(i => getBaseHouseName(i.HOUSE_NM)));
+        if (baseNames.size < 2) {
+            clusterSkipped++;
+            continue; // 같은 아파트 재공급 → 스킵
+        }
+
+        const clusterCenter = items[0].coordinates;
+        console.log(`  🔍 클러스터 [${key}]: ${items.length}건, 고유 아파트 ${baseNames.size}개 (${[...baseNames].slice(0, 3).join(', ')}${baseNames.size > 3 ? ' ...' : ''})`);
+
+        // 각 항목에 대해 Kakao "단지명 아파트" 검색 시도
+        let resolvedCount = 0;
+        const unresolvedItems = [];
+
+        for (const item of items) {
+            const newCoords = await resolveClusterItem(item, clusterCenter);
+            if (newCoords) {
+                console.log(`    ✅ ${item.HOUSE_NM}: [${item.coordinates[0].toFixed(4)}, ${item.coordinates[1].toFixed(4)}] → [${newCoords[0].toFixed(4)}, ${newCoords[1].toFixed(4)}]`);
+                item.coordinates = newCoords;
+                resolvedCount++;
+                clusterFixed++;
+            } else {
+                unresolvedItems.push(item);
+            }
+            await new Promise(resolve => setTimeout(resolve, 120));
+        }
+
+        // 미해결 항목: Jitter 적용 (2개 이상 미해결 시)
+        if (unresolvedItems.length >= 2) {
+            for (let j = 0; j < unresolvedItems.length; j++) {
+                const item = unresolvedItems[j];
+                const jittered = jitterCoordinate(clusterCenter, j, unresolvedItems.length);
+                console.log(`    🔄 Jitter: ${item.HOUSE_NM}: [${clusterCenter[0].toFixed(4)}, ${clusterCenter[1].toFixed(4)}] → [${jittered[0].toFixed(4)}, ${jittered[1].toFixed(4)}]`);
+                item.coordinates = jittered;
+                clusterJittered++;
+            }
+        }
+
+        console.log(`    📊 결과: Kakao 해결 ${resolvedCount}건, Jitter ${unresolvedItems.length >= 2 ? unresolvedItems.length : 0}건, 미변경 ${unresolvedItems.length < 2 ? unresolvedItems.length : 0}건`);
+    }
+
+    totalFixed += clusterFixed + clusterJittered;
+
+    if (clusterFixed + clusterJittered + clusterSkipped > 0) {
+        console.log(`✅ 클러스터 해소 완료: Kakao 검색 ${clusterFixed}건, Jitter ${clusterJittered}건, 스킵(같은 아파트) ${clusterSkipped}건`);
+    }
+
+    if (totalFixed === 0 && sidoSuspects.length === 0) {
+        console.log('📍 좌표 검증 통과 (시도 불일치 없음, 문제 클러스터 없음)');
+    }
+
+    console.log(`✅ 좌표 수정 총계: ${totalFixed}건`);
+    return totalFixed;
+}
+
+// 비정형 주소 패턴 감지
+function isIrregularAddress(addr) {
+    if (!addr) return false;
+    if (/\d+BL|블록/i.test(addr)) return true;           // BL/블록
+    if (/일원|일대/.test(addr)) return true;              // 범위 표현
+    if (/신도시|택지|지구/.test(addr) && !/\d{1,5}(?:-\d{1,5})?번?지?$/.test(addr.replace(/\(.*\)/, ''))) return true;
+    if (/\([가-힣]+동\)$/.test(addr) && !/[가-힣]+동\s+\d/.test(addr)) return true;
+    return false;
+}
+
+// auditIrregularAddresses는 fullCoordinateAudit/verifyNewCoordinates로 대체됨
+
+// 좌표 전수 감사: 모든 좌표 보유 항목에 대해 Kakao 키워드 검색으로 교차 검증
+async function fullCoordinateAudit(lists) {
+    if (!KAKAO_REST_API_KEY) return 0;
+
+    const targets = lists.filter(i => i.coordinates && i.HOUSE_NM);
+    if (targets.length === 0) return 0;
+
+    const BATCH_SIZE = 10; // Kakao API 초당 10건 제한 고려
+    const BATCH_DELAY = 150; // 배치 간 대기(ms)
+    console.log(`🔎 좌표 전수 감사: ${targets.length}건 교차 검증 시작 (배치 ${BATCH_SIZE}건)...`);
+    let fixed = 0;
+    let checked = 0;
+
+    for (let batch = 0; batch < targets.length; batch += BATCH_SIZE) {
+        const chunk = targets.slice(batch, batch + BATCH_SIZE);
+        const results = await Promise.allSettled(chunk.map(async (item) => {
+            const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
+
+            // 1차: Kakao 키워드 검색 "단지명 아파트"
+            let correctCoords = await kakaoKeywordSearch(houseName + ' 아파트');
+
+            // 2차: 시도+단지명 키워드 검색
+            if (!correctCoords && item.SUBSCRPT_AREA_CODE_NM) {
+                const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+                const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+                if (fullSido) {
+                    correctCoords = await kakaoKeywordSearch(fullSido + ' ' + houseName);
+                }
+            }
+
+            // 3차: 웹검색 폴백
+            if (!correctCoords) {
+                const webAddr = await webSearchAddress(houseName + ' 아파트');
+                if (webAddr) correctCoords = await kakaoAddressSearch(webAddr);
+            }
+
+            if (!correctCoords) return null;
+
+            const dist = haversineDistance(
+                item.coordinates[0], item.coordinates[1],
+                correctCoords[0], correctCoords[1]
+            );
+
+            // 500m 이상 차이나면 수정 (동 대표점 vs 실제 위치 차이)
+            if (dist > 0.5) {
+                return { item, correctCoords, dist, houseName };
+            }
+            return null;
+        }));
+
+        for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) {
+                const { item, correctCoords, dist, houseName } = r.value;
+                console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
+                item.coordinates = correctCoords;
+                fixed++;
+            }
+        }
+        checked += chunk.length;
+
+        // 진행률 로그 (200건마다)
+        if (checked % 200 < BATCH_SIZE) {
+            console.log(`  📊 진행: ${checked}/${targets.length} (수정 ${fixed}건)`);
+        }
+
+        await new Promise(r => setTimeout(r, BATCH_DELAY));
+    }
+
+    console.log(`✅ 전수 감사 완료: ${checked}건 검증, ${fixed}건 수정`);
+    return fixed;
+}
+
+// 새로 지오코딩된 항목의 좌표를 키워드 검색으로 교차 검증
+async function verifyNewCoordinates(lists, newlyGeocodedKeys) {
+    if (!KAKAO_REST_API_KEY) return 0;
+
+    // newlyGeocodedKeys가 없으면 비정형 주소만 검증 (기존 auditIrregularAddresses 동작 유지)
+    const targets = newlyGeocodedKeys
+        ? lists.filter(i => newlyGeocodedKeys.has(`${i.HOUSE_MANAGE_NO}_${i.PBLANC_NO}`))
+        : lists.filter(i => i.HSSPLY_ADRES && i.coordinates && isIrregularAddress(i.HSSPLY_ADRES));
+
+    if (targets.length === 0) return 0;
+
+    console.log(`🔎 신규/비정형 좌표 ${targets.length}건 교차 검증...`);
+    let fixed = 0;
+
+    for (let batch = 0; batch < targets.length; batch += 10) {
+        const chunk = targets.slice(batch, batch + 10);
+        const results = await Promise.allSettled(chunk.map(async (item) => {
+            const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
+
+            // 1차: Kakao 키워드 검색 "단지명 아파트"
+            let correctCoords = await kakaoKeywordSearch(houseName + ' 아파트');
+
+            // 2차: 시도+단지명 키워드 검색
+            if (!correctCoords && item.SUBSCRPT_AREA_CODE_NM) {
+                const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+                const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+                if (fullSido) {
+                    correctCoords = await kakaoKeywordSearch(fullSido + ' ' + houseName);
+                }
+            }
+
+            // 3차: 웹검색 폴백
+            if (!correctCoords) {
+                const webAddr = await webSearchAddress(houseName + ' 아파트');
+                if (webAddr) correctCoords = await kakaoAddressSearch(webAddr);
+            }
+
+            if (!correctCoords) return null;
+
+            const dist = haversineDistance(
+                item.coordinates[0], item.coordinates[1],
+                correctCoords[0], correctCoords[1]
+            );
+
+            // 500m 이상 차이나면 수정
+            if (dist > 0.5) {
+                return { item, correctCoords, dist, houseName };
+            }
+            return null;
+        }));
+
+        for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) {
+                const { item, correctCoords, dist, houseName } = r.value;
+                console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
+                item.coordinates = correctCoords;
+                fixed++;
+            }
+        }
+
+        await new Promise(r => setTimeout(r, 150));
+    }
+
+    if (fixed > 0) {
+        console.log(`✅ 교차 검증 수정: ${fixed}건`);
+    } else {
+        console.log(`✅ 교차 검증 통과`);
+    }
+    return fixed;
 }
 
 // API 호출 헬퍼
@@ -121,11 +797,11 @@ async function fetchNewAnnouncements(afterDate) {
     let page = 1;
     let hasMore = true;
 
-    while (hasMore && page <= 10) {
+    while (hasMore && page <= 50) {
         const data = await fetchApi(DETAIL_BASE, 'getAPTLttotPblancDetail', {
             page,
             perPage: 100,
-            [`cond[RCRIT_PBLANC_DE::GT]`]: afterDate.replace(/-/g, '')
+            [`cond[RCRIT_PBLANC_DE::GT]`]: afterDate
         });
 
         if (!data.data || data.data.length === 0) {
@@ -509,30 +1185,33 @@ async function fetchDetailsForItem(item) {
         const detailFile = path.join(detailDir, `${houseManageNo}_${pblancNo}.json`);
         fs.writeFileSync(detailFile, JSON.stringify(result, null, 2));
 
-        // Return summary for main cache
+        // Return summary for main cache + full detail for details-cache
         const totals = result.totals || { stages: { special: {}, rank1: {}, rank2: {}, total: {} } };
         return {
-            totals: {
-                supplyTotal: totals.supplyTotal || 0,
-                stages: {
-                    special: {
-                        request: totals.stages.special.request,
-                        rate: totals.stages.special.rate
-                    },
-                    rank1: {
-                        request: totals.stages.rank1.request,
-                        rate: totals.stages.rank1.rate
-                    },
-                    rank2: {
-                        request: totals.stages.rank2.request,
-                        rate: totals.stages.rank2.rate
-                    },
-                    total: {
-                        request: totals.stages.total.request,
-                        rate: totals.stages.total.rate
+            summary: {
+                totals: {
+                    supplyTotal: totals.supplyTotal || 0,
+                    stages: {
+                        special: {
+                            request: totals.stages.special.request,
+                            rate: totals.stages.special.rate
+                        },
+                        rank1: {
+                            request: totals.stages.rank1.request,
+                            rate: totals.stages.rank1.rate
+                        },
+                        rank2: {
+                            request: totals.stages.rank2.request,
+                            rate: totals.stages.rank2.rate
+                        },
+                        total: {
+                            request: totals.stages.total.request,
+                            rate: totals.stages.total.rate
+                        }
                     }
                 }
-            }
+            },
+            detail: result
         };
 
     } catch (error) {
@@ -554,6 +1233,39 @@ function saveCache(data) {
     console.log(`💾 메인 캐시 저장 완료: ${sizeMB}MB`);
 }
 
+// detail-cache에서 calculatedStats 누락분 동기화 (backfill)
+function syncCalculatedStatsFromDetailCache(existingStats) {
+    const detailsCachePath = path.join(DATA_DIR, 'cheongyak-details-cache.json');
+    if (!fs.existsSync(detailsCachePath)) return {};
+    let detailsCache;
+    try {
+        detailsCache = JSON.parse(fs.readFileSync(detailsCachePath, 'utf-8'));
+    } catch (e) { return {}; }
+
+    const details = detailsCache.details || {};
+    const backfilled = {};
+    Object.keys(details).forEach(key => {
+        if (existingStats[key]) return;
+        const totals = details[key]?.totals;
+        if (!totals?.stages) return;
+        backfilled[key] = {
+            totals: {
+                supplyTotal: totals.supplyTotal || 0,
+                stages: {
+                    special: { request: totals.stages.special?.request ?? null, rate: totals.stages.special?.rate ?? null },
+                    rank1:   { request: totals.stages.rank1?.request ?? null,   rate: totals.stages.rank1?.rate ?? null },
+                    rank2:   { request: totals.stages.rank2?.request ?? null,   rate: totals.stages.rank2?.rate ?? null },
+                    total:   { request: totals.stages.total?.request ?? null,   rate: totals.stages.total?.rate ?? null }
+                }
+            }
+        };
+    });
+    if (Object.keys(backfilled).length > 0) {
+        console.log(`🔄 detail-cache에서 calculatedStats ${Object.keys(backfilled).length}건 동기화`);
+    }
+    return backfilled;
+}
+
 // 메인 함수
 async function main() {
     console.log('🚀 청약경쟁률 대시보드 - 정적 캐시 생성 시스템');
@@ -564,10 +1276,39 @@ async function main() {
         process.exit(1);
     }
 
+    const isBackfill = process.argv.includes('--backfill');
+    const isFixCoords = process.argv.includes('--fix-coords');
+    const isAuditCoords = process.argv.includes('--audit-coords');
+
     // 1. 기존 캐시 로드
     const existingCache = loadExistingCache();
-    const lastDate = getLastAnnouncementDate(existingCache);
-    console.log(`📅 마지막 캐시 공고일: ${lastDate}`);
+    const lastDate = isBackfill ? '2020-01-01' : getLastAnnouncementDate(existingCache);
+    console.log(`📅 ${isBackfill ? '[백필 모드] ' : ''}${isFixCoords ? '[좌표수정 모드] ' : ''}${isAuditCoords ? '[전수감사 모드] ' : ''}마지막 캐시 공고일: ${lastDate}`);
+
+    // 전수 감사 모드: 모든 좌표 보유 항목을 Kakao 키워드 검색으로 교차 검증
+    if (isAuditCoords && existingCache?.lists) {
+        const auditFixed = await fullCoordinateAudit(existingCache.lists);
+        if (auditFixed > 0) {
+            saveCache(existingCache);
+        }
+        if (!isFixCoords && !isBackfill) {
+            console.log('✅ 전수 감사 완료. 일반 업데이트는 건너뜁니다.');
+            return;
+        }
+    }
+
+    // 좌표 수정 모드: 기존 좌표의 시도 불일치 검사 및 재지오코딩
+    if (isFixCoords && existingCache?.lists) {
+        const fixedCount = await fixInvalidCoordinates(existingCache.lists);
+        // 전수 감사도 함께 실행 (--audit-coords에서 이미 실행했으면 건너뜀)
+        let auditFixed = 0;
+        if (!isAuditCoords) {
+            auditFixed = await fullCoordinateAudit(existingCache.lists);
+        }
+        if (fixedCount > 0 || auditFixed > 0) {
+            saveCache(existingCache);
+        }
+    }
 
     // 2. 새 공고 조회
     const newItems = await fetchNewAnnouncements(lastDate);
@@ -586,12 +1327,25 @@ async function main() {
     }
 
     // 3. 상세 데이터 수집 (결과 발표된 것만)
-    // 기존 캐시에 있는 항목 중에서도 상세 JSON이 없는 경우를 대비해
-    // 최근 100개 항목에 대해 상세 파일 존재 여부를 체크하고 없으면 생성
+    // 기존 캐시에 있는 항목 중 calculatedStats가 없는 항목 전체를 검사하여
+    // 상세 데이터 누락을 방지 (기존 "최근 50개" 제한으로 인한 누락 해소)
     const allCandidates = [...newItems];
+    // existingStats와 backfilledStats를 외부 스코프에서 선언 (Path A/B에서 사용)
+    const existingStats = existingCache?.calculatedStats ? { ...existingCache.calculatedStats } : {};
+    const backfilledStats = syncCalculatedStatsFromDetailCache(existingStats);
+    Object.assign(existingStats, backfilledStats);
+
     if (existingCache && existingCache.lists) {
-        // 최근 것부터 역순으로 50개 추가 검사
-        allCandidates.push(...existingCache.lists.slice(-50));
+        // calculatedStats가 없거나 상세 파일이 없는 기존 항목을 대상으로 검사
+        const missingItems = existingCache.lists.filter(item => {
+            const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
+            if (!existingStats[key]) return true;
+            // calculatedStats는 있지만 상세 파일이 없는 경우도 포함
+            const detailPath = path.join(DATA_DIR, 'details', `${key}.json`);
+            if (!fs.existsSync(detailPath)) return true;
+            return false;
+        });
+        allCandidates.push(...missingItems);
     }
 
     // 중복 제거
@@ -611,6 +1365,7 @@ async function main() {
     console.log(`📊 상세 데이터 생성 대상: ${targetItems.length}건`);
 
     const newCalculatedStats = {};
+    const newDetailEntries = {};
 
     // 5개씩 병렬 처리
     const BATCH_SIZE = 5;
@@ -624,7 +1379,8 @@ async function main() {
             if (res) {
                 const item = batch[idx];
                 const key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
-                newCalculatedStats[key] = res;
+                newCalculatedStats[key] = res.summary;
+                newDetailEntries[key] = res.detail;
             }
         });
 
@@ -632,26 +1388,60 @@ async function main() {
         await new Promise(resolve => setTimeout(resolve, 200)); // Rate Limit buffer
     }
 
+    // details-cache.json에 새 항목 병합
+    if (Object.keys(newDetailEntries).length > 0) {
+        const detailsCachePath = path.join(DATA_DIR, 'cheongyak-details-cache.json');
+        let existingDetailsCache = { metadata: {}, details: {} };
+        if (fs.existsSync(detailsCachePath)) {
+            try {
+                existingDetailsCache = JSON.parse(fs.readFileSync(detailsCachePath, 'utf-8'));
+            } catch (e) {
+                console.error('⚠️ details-cache.json 로드 실패, 새로 생성합니다.');
+            }
+        }
+        const mergedDetails = { ...existingDetailsCache.details, ...newDetailEntries };
+        const updatedDetailsCache = {
+            metadata: {
+                ...existingDetailsCache.metadata,
+                generatedAt: new Date().toISOString(),
+                totalCount: Object.keys(mergedDetails).length
+            },
+            details: mergedDetails
+        };
+        fs.writeFileSync(detailsCachePath, JSON.stringify(updatedDetailsCache), 'utf-8');
+        const sizeMB = (fs.statSync(detailsCachePath).size / (1024 * 1024)).toFixed(2);
+        console.log(`💾 상세 캐시 업데이트: ${Object.keys(newDetailEntries).length}건 추가 (총 ${Object.keys(mergedDetails).length}건, ${sizeMB}MB)`);
+    }
+
     // 4. 캐시 병합 (새로운 항목만)
     if (newItems.length > 0) {
         const existingIds = new Set((existingCache?.lists || []).map(item => `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`));
         const uniqueNewItems = newItems.filter(item => !existingIds.has(`${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`));
 
+        const mergedLists = [...(existingCache?.lists || []), ...uniqueNewItems];
+
+        // 좌표 없는 항목 지오코딩
+        await geocodeMissingItems(mergedLists);
+        // 신규/비정형 좌표 교차 검증
+        await verifyNewCoordinates(mergedLists);
+
+        const actualStartDate = mergedLists.reduce((min, item) => {
+            const d = item.RCRIT_PBLANC_DE || '';
+            return d && d < min ? d : min;
+        }, '99999999');
+        const mergedStats = {
+            ...existingStats,
+            ...newCalculatedStats
+        };
         const updatedCache = {
-            lists: [...(existingCache?.lists || []), ...uniqueNewItems],
-            calculatedStats: {
-                ...(existingCache?.calculatedStats || {}),
-                ...newCalculatedStats
-            },
+            lists: mergedLists,
+            calculatedStats: mergedStats,
             metadata: {
                 generatedAt: new Date().toISOString(),
-                totalCount: (existingCache?.lists?.length || 0) + uniqueNewItems.length,
-                statsCount: Object.keys({
-                    ...(existingCache?.calculatedStats || {}),
-                    ...newCalculatedStats
-                }).length,
+                totalCount: mergedLists.length,
+                statsCount: Object.keys(mergedStats).length,
                 dateRange: {
-                    start: existingCache?.metadata?.dateRange?.start || '2020-01-01',
+                    start: actualStartDate !== '99999999' ? actualStartDate : (existingCache?.metadata?.dateRange?.start || ''),
                     end: uniqueNewItems.length > 0
                         ? uniqueNewItems[uniqueNewItems.length - 1].RCRIT_PBLANC_DE
                         : existingCache?.metadata?.dateRange?.end
@@ -659,17 +1449,41 @@ async function main() {
             }
         };
         saveCache(updatedCache);
-    } else if (Object.keys(newCalculatedStats).length > 0) {
-        // 새 항목은 없지만 기존 항목의 통계가 업데이트된 경우 (상세 파일 생성 등)
-        // calculatedStats만 업데이트
+    } else if (Object.keys(newCalculatedStats).length > 0 || Object.keys(backfilledStats || {}).length > 0) {
+        // 새 항목은 없지만 기존 항목의 통계가 업데이트된 경우 (상세 파일 생성 또는 backfill)
+        const mergedLists = existingCache.lists || [];
+
+        // 좌표 없는 항목 지오코딩
+        await geocodeMissingItems(mergedLists);
+        // 신규/비정형 좌표 교차 검증
+        await verifyNewCoordinates(mergedLists);
+
         const updatedCache = {
             ...existingCache,
+            lists: mergedLists,
             calculatedStats: {
-                ...(existingCache.calculatedStats || {}),
+                ...existingStats,
                 ...newCalculatedStats
             }
         };
         saveCache(updatedCache);
+    } else {
+        // 새 공고도 없고 상세 업데이트도 없지만, 좌표 미보유 항목 체크
+        const lists = existingCache?.lists || [];
+        const geocoded = await geocodeMissingItems(lists);
+        // 신규/비정형 좌표 교차 검증
+        const audited = await verifyNewCoordinates(lists);
+        if (geocoded > 0 || audited > 0) {
+            saveCache({ ...existingCache, lists });
+        }
+    }
+
+    // 커버리지 로그
+    const finalCache = loadExistingCache();
+    if (finalCache) {
+        const finalStats = Object.keys(finalCache.calculatedStats || {}).length;
+        const totalLists = (finalCache.lists || []).length;
+        console.log(`📊 calculatedStats 커버리지: ${finalStats}/${totalLists} (${totalLists > 0 ? ((finalStats/totalLists)*100).toFixed(1) : 0}%)`);
     }
 
     console.log('='.repeat(50));

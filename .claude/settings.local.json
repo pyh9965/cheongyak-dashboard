@@ -18,7 +18,10 @@
       "Bash(tasklist:*)",
       "Bash(powershell -command \"\\(Get-Item ''data\\\\cheongyak-archive.json''\\).Length / 1MB\")",
       "Bash(powershell -command:*)",
-      "Bash(git remote add:*)"
+      "Bash(git remote add:*)",
+      "Bash(export:*)",
+      "Bash(grep:*)",
+      "Bash(/c/Windows/System32/tasklist.exe:*)"
     ]
   }
 }

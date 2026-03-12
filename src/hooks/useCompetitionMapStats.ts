@@ -60,15 +60,22 @@ export function useCompetitionMapStats(
       // 1. 지역 그룹핑 (줌 레벨에 따라 광역/기초 구분)
       const isSidoLevel = currentZoom < 9;
 
+      // 개별 단지 레벨(줌 >= 11)에서는 캐시된 좌표를 사용해 개별 마커 표시
+      const isIndividualLevel = currentZoom >= 11;
+
       filteredData.forEach((item) => {
         const address = item.HSSPLY_ADRES;
         const parsed = parseAddress(address);
-        
+
         // 주소 파싱 실패 시 시도 코드로 fallback 시도 (일부 데이터 보정)
         let key = "";
         let coords: Coordinates | null = null;
 
-        if (parsed) {
+        // 개별 단지 레벨에서 캐시된 좌표가 있으면 단지 고유 키 사용
+        if (isIndividualLevel && item.coordinates) {
+          key = `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`;
+          coords = item.coordinates as Coordinates;
+        } else if (parsed) {
           key = isSidoLevel ? parsed.sido : parsed.fullKey;
           coords = getGeoCoordinates(key);
 
