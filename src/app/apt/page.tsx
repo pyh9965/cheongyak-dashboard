@@ -87,8 +87,9 @@ function APTPageContent() {
   const prevEndMonth = React.useRef(searchParams.endMonth);
 
   React.useEffect(() => {
+    if (cacheLoading) return; // 캐시 로딩 완료 대기
     handleSearch(1);
-  }, [archiveCache]);
+  }, [archiveCache, cacheLoading]);
 
   // 날짜 범위 변경 감지 및 자동 재조회 (표 탭 활성 시)
   React.useEffect(() => {
@@ -189,7 +190,13 @@ function APTPageContent() {
         setMissingSpecialRequestData(missingSpecialRequests);
         setApplicationTotals(totals);
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "상세 데이터를 불러오지 못했습니다.");
+      // API 인증 오류 등은 사용자에게 친화적 메시지로 변환
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("인증키") || msg.includes("400") || msg.includes("SERVICE_KEY")) {
+        setDetailError("상세 데이터를 불러올 수 없습니다. 캐시된 데이터만 표시됩니다.");
+      } else {
+        setDetailError(msg || "상세 데이터를 불러오지 못했습니다.");
+      }
     } finally {
       setDetailLoading(false);
     }

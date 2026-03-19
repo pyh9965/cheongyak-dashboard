@@ -79,7 +79,7 @@ export function useAptData() {
   const [error, setError] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(Number(urlSearchParams.get("page")) || 1);
   const [archiveCache, setArchiveCache] = useState<CacheData | null>(null);
-  const [cacheLoading, setCacheLoading] = useState(false);
+  const [cacheLoading, setCacheLoading] = useState(!USE_SQLITE);
 
   // localStorage 캐싱 비활성화 - 정적 캐시 파일 사용
   // 기존 localStorage 캐시 정리 (용량 확보)
@@ -296,8 +296,13 @@ export function useAptData() {
           );
 
           console.log(`📦 [useAptData] 캐시 우선 모드: ${mergedData.length}건 (API 호출 생략)`);
+        } else if (cacheLoading) {
+          // 캐시 로딩 중이면 API 호출하지 않음
+          console.log('⏳ [useAptData] 캐시 로딩 중, 검색 대기');
+          setLoading(false);
+          return;
         } else {
-          // 캐시 없음 — 기존 API 호출 fallback
+          // 캐시 없음 + 캐시 로딩 완료 — 기존 API 호출 fallback
           console.log(`📡 [useAptData] 캐시 없음, API fallback 사용`);
 
           const getOptimalPerPage = (startMonth: string, endMonth: string): number => {
