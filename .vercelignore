@@ -1,0 +1,21 @@
+# 개별 상세 JSON 캐시 제외 (배치 캐시 cheongyak-details-cache.json으로 대체)
+public/data/details/
+
+# SQLite DB (Vercel에서 JSON 캐시 모드 사용)
+public/data/cheongyak.db
+public/data/cheongyak.db-shm
+public/data/cheongyak.db-wal
+
+# 지오코딩 웹검색 캐시
+public/data/geocode-web-cache.json
+
+# 스크립트 (빌드에 불필요)
+scripts/
+
+# 테스트
+tests/
+playwright-report/
+test-results/
+
+# C 소스/빌드
+build/

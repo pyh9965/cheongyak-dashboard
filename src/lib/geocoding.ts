@@ -1,7 +1,8 @@
 /**
- * 지오코딩 유틸리티 - Kakao Maps API 사용
- * 
+ * 지오코딩 유틸리티 - Nominatim (OpenStreetMap) 사용
+ *
  * 주택 주소를 좌표로 변환하고 캐싱합니다.
+ * API 키 불필요 — 초당 1건 제한 준수
  */
 
 export type Coordinates = [number, number]; // [lat, lng]
@@ -13,7 +14,6 @@ let cacheSaveTimer: NodeJS.Timeout | null = null;
 let lastError: string | null = null;
 
 const CACHE_FILE = '/data/address-coordinates.json';
-const KAKAO_API_KEY = process.env.NEXT_PUBLIC_KAKAO_API_KEY || '';
 
 /**
  * 캐시 파일 로드
@@ -54,8 +54,8 @@ function saveGeocodeCache(): void {
 }
 
 /**
- * 주소를 좌표로 변환 (Kakao API 사용)
- * 
+ * 주소를 좌표로 변환 (Nominatim API 사용)
+ *
  * @param address 주소 문자열
  * @returns 좌표 [lat, lng] 또는 null
  */
@@ -69,24 +69,18 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
         return geocodeCache[normalizedAddress];
     }
 
-    // Kakao API 키 확인
-    if (!KAKAO_API_KEY) {
-        console.warn('⚠️ Kakao API 키가 설정되지 않았습니다');
-        return null;
-    }
-
     try {
-        // Kakao 주소 검색 API 호출
-        const url = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(normalizedAddress)}`;
+        // Nominatim 주소 검색 API 호출
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(normalizedAddress)}&format=json&countrycodes=kr&limit=1&accept-language=ko`;
 
         const response = await fetch(url, {
             headers: {
-                'Authorization': `KakaoAK ${KAKAO_API_KEY}`
+                'User-Agent': 'CheongyakDashboard/1.0 (geocoding for Korean apartment data)'
             }
         });
 
         if (!response.ok) {
-            const msg = `Kakao API 오류: ${response.status}`;
+            const msg = `Nominatim API 오류: ${response.status}`;
             console.error(msg);
             lastError = `API ${response.status}`;
             return null;
@@ -94,10 +88,16 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
 
         const data = await response.json();
 
-        if (data.documents && data.documents.length > 0) {
-            const doc = data.documents[0];
-            const lat = parseFloat(doc.y);
-            const lng = parseFloat(doc.x);
+        if (data && data.length > 0) {
+            const lat = parseFloat(data[0].lat);
+            const lng = parseFloat(data[0].lon);
+
+            // 한국 범위 검증
+            if (lat < 33 || lat > 39 || lng < 124 || lng > 132) {
+                console.warn(`⚠️ 한국 범위 밖: ${normalizedAddress} -> [${lat}, ${lng}]`);
+                return null;
+            }
+
             const coordinates: Coordinates = [lat, lng];
 
             // 캐시에 저장
@@ -118,21 +118,21 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
 
 /**
  * 배치 지오코딩 (여러 주소 한번에 변환)
- * 
+ *
  * @param addresses 주소 배열
- * @param delayMs 각 요청 사이 딜레이 (ms)
+ * @param delayMs 각 요청 사이 딜레이 (ms) — Nominatim 초당 1건 제한
  * @returns 주소별 좌표 맵
  */
 export async function batchGeocode(
     addresses: string[],
-    delayMs: number = 200
+    delayMs: number = 1100
 ): Promise<Record<string, Coordinates | null>> {
     const result: Record<string, Coordinates | null> = {};
 
     for (const address of addresses) {
         result[address] = await geocodeAddress(address);
 
-        // API 부하 방지
+        // Nominatim rate limit (초당 1건)
         if (delayMs > 0) {
             await new Promise(resolve => setTimeout(resolve, delayMs));
         }
@@ -146,12 +146,10 @@ export async function batchGeocode(
  */
 export function getGeocodeStats(): {
     cacheSize: number;
-    hasApiKey: boolean;
     lastError: string | null;
 } {
     return {
         cacheSize: Object.keys(geocodeCache).length,
-        hasApiKey: !!KAKAO_API_KEY,
         lastError
     };
 }

@@ -3,12 +3,28 @@
  *
  * 전체 데이터셋에 대한 종합 통계(총 공급/청약, 월별, 유형별)를 계산합니다.
  * getCompetitionStagesSync를 사용하여 일관된 데이터 우선순위를 적용합니다.
+ *
+ * NEXT_PUBLIC_USE_SQLITE=true 환경에서는 서버 사이드 /api/apt/stats 엔드포인트를 사용합니다.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import type { AptInfo, CacheData } from '@/lib/cache-loader';
 import type { DashboardStatsResult, MonthlyStatItem, TypeStatItem } from './types';
 import { getCompetitionStagesSync, getStageRequestTarget, getSupplyTotalForItem } from './utils';
+
+const USE_SQLITE = process.env.NEXT_PUBLIC_USE_SQLITE === 'true';
+
+const defaultStats: DashboardStatsResult = {
+  supplyTotal: 0,
+  requestTotal: 0,
+  rateTotal: 0,
+  rateRank1: 0,
+  rateRank2: 0,
+  rateSpecial: 0,
+  maxCompetition: { name: '', rate: 0 },
+  monthlyStats: {},
+  typeStats: {},
+};
 
 /**
  * 대시보드용 통계 데이터를 계산합니다.
@@ -27,7 +43,68 @@ export function useDashboardStats(
   startMonth?: string,
   endMonth?: string
 ): DashboardStatsResult {
-  return useMemo(() => {
+  // SQLite 모드: 서버에서 미리 집계된 통계를 가져옴
+  const [sqliteStats, setSqliteStats] = useState<DashboardStatsResult>(defaultStats);
+
+  useEffect(() => {
+    if (!USE_SQLITE) return;
+
+    const params = new URLSearchParams();
+    if (startMonth) params.set('startMonth', startMonth.replace('-', ''));
+    if (endMonth) params.set('endMonth', endMonth.replace('-', ''));
+
+    fetch(`/api/apt/stats?${params.toString()}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`stats API 오류: ${res.status}`);
+        return res.json();
+      })
+      .then((res) => {
+        // monthlyStats 배열 → Record<string, MonthlyStatItem>
+        const monthlyStatsMap: Record<string, MonthlyStatItem> = {};
+        if (Array.isArray(res.monthlyStats)) {
+          for (const item of res.monthlyStats) {
+            monthlyStatsMap[item.month] = {
+              supply: item.supply ?? 0,
+              request: 0,
+              special: { supply: 0, request: 0 },
+              rank1: { supply: 0, request: 0 },
+              rank2: { supply: 0, request: 0 },
+            };
+          }
+        }
+
+        // typeStats 배열 → Record<string, TypeStatItem>
+        const typeStatsMap: Record<string, TypeStatItem> = {};
+        if (Array.isArray(res.typeStats)) {
+          for (const item of res.typeStats) {
+            typeStatsMap[item.houseType] = {
+              supply: item.supply ?? 0,
+              request: 0,
+            };
+          }
+        }
+
+        setSqliteStats({
+          supplyTotal: res.supplyTotal ?? 0,
+          requestTotal: res.requestTotal ?? 0,
+          rateTotal: res.rateTotal ?? 0,
+          rateRank1: res.rateRank1 ?? 0,
+          rateRank2: res.rateRank2 ?? 0,
+          rateSpecial: res.rateSpecial ?? 0,
+          maxCompetition: { name: '', rate: res.maxCompetition ?? 0 },
+          monthlyStats: monthlyStatsMap,
+          typeStats: typeStatsMap,
+        });
+      })
+      .catch((err) => {
+        console.error('[useDashboardStats] SQLite 통계 조회 실패:', err);
+      });
+  }, [startMonth, endMonth, data.length]);
+
+  // JSON 모드: 클라이언트 사이드 집계 (기존 로직 유지)
+  const jsonStats = useMemo(() => {
+    if (USE_SQLITE) return defaultStats; // SQLite 모드에서는 무거운 연산 생략
+
     // 날짜 범위 파싱 (이중 안전장치)
     const searchStart = startMonth ? new Date(startMonth + '-01') : null;
     const searchEnd = endMonth ? (() => {
@@ -132,9 +209,9 @@ export function useDashboardStats(
             rank2: { supply: 0, request: 0 }
           };
         }
-        
+
         monthlyStats[monthKey].supply += itemSupply;
-        
+
         if (hasDetailedStats && stages) {
           // 전체 통계
           monthlyStats[monthKey].request += totalStage.request || 0;
@@ -159,9 +236,9 @@ export function useDashboardStats(
       if (!typeStats[houseType]) {
         typeStats[houseType] = { supply: 0, request: 0 };
       }
-      
+
       typeStats[houseType].supply += itemSupply;
-      
+
       if (hasDetailedStats && stages) {
         const req = totalStage.request || 0;
         typeStats[houseType].request += req;
@@ -188,4 +265,6 @@ export function useDashboardStats(
       typeStats,
     };
   }, [data, extraData, archiveCache, startMonth, endMonth]);
+
+  return USE_SQLITE ? sqliteStats : jsonStats;
 }

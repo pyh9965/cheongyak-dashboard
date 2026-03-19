@@ -13,14 +13,44 @@ const fs = require('fs');
 const path = require('path');
 
 const API_KEY = process.env.REB_API_KEY;
-const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY;
-const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID;
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET;
 const DETAIL_BASE = 'https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1';
 const COMPET_BASE = 'https://api.odcloud.kr/api/ApplyhomeInfoCmpetRtSvc/v1';
 
 const DATA_DIR = path.join(__dirname, '../public/data');
 const CACHE_FILE = path.join(DATA_DIR, 'cheongyak-archive.json');
+const WEB_CACHE_FILE = path.join(DATA_DIR, 'geocode-web-cache.json');
+
+// 웹검색 결과 캐시 (DuckDuckGo/Nominatim 재요청 방지)
+let webGeocodeCache = {};
+function loadWebGeocodeCache() {
+    try {
+        if (fs.existsSync(WEB_CACHE_FILE)) {
+            webGeocodeCache = JSON.parse(fs.readFileSync(WEB_CACHE_FILE, 'utf-8'));
+            console.log(`📍 웹 지오코딩 캐시 로드: ${Object.keys(webGeocodeCache).length}건`);
+        }
+    } catch (e) {
+        webGeocodeCache = {};
+    }
+}
+function saveWebGeocodeCache() {
+    try {
+        fs.writeFileSync(WEB_CACHE_FILE, JSON.stringify(webGeocodeCache, null, 2), 'utf-8');
+    } catch (e) {}
+}
+
+// User-Agent 로테이션 (DuckDuckGo 차단 대비)
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+];
+let uaIndex = 0;
+function getNextUserAgent() {
+    const ua = USER_AGENTS[uaIndex % USER_AGENTS.length];
+    uaIndex++;
+    return ua;
+}
 
 // 날짜 파싱 유틸리티
 function parseDate(dateStr) {
@@ -68,67 +98,116 @@ function isApplicationClosed(item) {
     return false;
 }
 
-// Kakao REST API 주소 검색
-async function kakaoAddressSearch(query) {
-    try {
-        const url = 'https://dapi.kakao.com/v2/local/search/address.json?query=' + encodeURIComponent(query);
-        const res = await fetch(url, { headers: { 'Authorization': 'KakaoAK ' + KAKAO_REST_API_KEY } });
-        if (!res.ok) return null;
-        const body = await res.json();
-        if (body.documents && body.documents.length > 0) {
-            return [parseFloat(body.documents[0].y), parseFloat(body.documents[0].x)];
-        }
-    } catch (e) {}
-    return null;
-}
+// Nominatim (OpenStreetMap) 주소 검색 — Kakao 주소검색 대체
+// API 키 불필요, 초당 1건 제한
+async function nominatimGeocode(query) {
+    if (!query || query.trim().length < 3) return null;
 
-// Kakao REST API 키워드 검색 (fallback)
-async function kakaoKeywordSearch(query) {
-    try {
-        const url = 'https://dapi.kakao.com/v2/local/search/keyword.json?query=' + encodeURIComponent(query);
-        const res = await fetch(url, { headers: { 'Authorization': 'KakaoAK ' + KAKAO_REST_API_KEY } });
-        if (!res.ok) return null;
-        const body = await res.json();
-        if (body.documents && body.documents.length > 0) {
-            // 아파트/주거 카테고리 우선 선택
-            const aptResult = body.documents.find(d =>
-                d.category_name && (d.category_name.includes('아파트') || d.category_name.includes('주거'))
-            );
-            const doc = aptResult || body.documents[0];
-            return [parseFloat(doc.y), parseFloat(doc.x)];
-        }
-    } catch (e) {}
-    return null;
-}
+    // 캐시 확인
+    const cacheKey = 'nom:' + query.trim();
+    if (webGeocodeCache[cacheKey]) return webGeocodeCache[cacheKey];
 
-// Naver 로컬 검색 API — 도로명주소 추출용 (Kakao 실패 시 폴백)
-async function naverLocalSearch(query) {
-    if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET) return null;
     try {
-        const url = 'https://openapi.naver.com/v1/search/local.json?query='
-            + encodeURIComponent(query) + '&display=5';
+        const url = 'https://nominatim.openstreetmap.org/search?q='
+            + encodeURIComponent(query)
+            + '&format=json&countrycodes=kr&limit=3&accept-language=ko';
         const res = await fetch(url, {
-            headers: {
-                'X-Naver-Client-Id': NAVER_CLIENT_ID,
-                'X-Naver-Client-Secret': NAVER_CLIENT_SECRET,
-            }
+            headers: { 'User-Agent': 'CheongyakDashboard/1.0 (geocoding for Korean apartment data)' }
         });
         if (!res.ok) return null;
         const body = await res.json();
-        if (!body.items || body.items.length === 0) return null;
+        if (body && body.length > 0) {
+            const lat = parseFloat(body[0].lat);
+            const lng = parseFloat(body[0].lon);
+            if (lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132) {
+                const coords = [lat, lng];
+                webGeocodeCache[cacheKey] = coords;
+                return coords;
+            }
+        }
+    } catch (e) {}
+    return null;
+}
 
-        // 아파트/주거 카테고리 우선
-        const aptItem = body.items.find(item => {
-            const cat = item.category || '';
-            return cat.includes('아파트') || cat.includes('주거') || cat.includes('부동산');
-        });
-        const bestItem = aptItem || body.items[0];
+// DuckDuckGo 웹검색 — 좌표 직접 추출 (지도 URL에서 @lat,lng 패턴 파싱)
+// API 키 불필요
+async function webSearchCoordinates(query) {
+    if (!query) return null;
 
-        // roadAddress 우선, 없으면 address
-        return bestItem.roadAddress || bestItem.address || null;
-    } catch (e) {
-        return null;
+    // 캐시 확인
+    const cacheKey = 'wsc:' + query.trim();
+    if (webGeocodeCache[cacheKey]) return webGeocodeCache[cacheKey];
+
+    const maxRetries = 3;
+    let delay = 2000;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const url = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query + ' 위치 지도');
+            const res = await fetch(url, {
+                headers: { 'User-Agent': getNextUserAgent() }
+            });
+            if (res.status === 429 || res.status === 503) {
+                // 차단 — 지수 백오프
+                await new Promise(r => setTimeout(r, delay));
+                delay *= 2;
+                continue;
+            }
+            if (!res.ok) return null;
+            const html = await res.text();
+            const text = html.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/g, ' ');
+
+            // 지도 URL 좌표 패턴들
+            const patterns = [
+                /@(-?\d{2}\.\d{3,8}),\s*(-?\d{2,3}\.\d{3,8})/,        // @37.xxxx,127.xxxx
+                /lat[=:](-?\d{2}\.\d{3,8})[&,;\s]+l(?:ng|on)[=:](-?\d{2,3}\.\d{3,8})/i, // lat=37&lng=127
+                /center[=:](-?\d{2}\.\d{3,8}),(-?\d{2,3}\.\d{3,8})/i, // center=37,127
+                /q=(-?\d{2}\.\d{3,8}),(-?\d{2,3}\.\d{3,8})/,          // q=37,127
+            ];
+
+            for (const pattern of patterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    const lat = parseFloat(match[1]);
+                    const lng = parseFloat(match[2]);
+                    if (lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132) {
+                        const coords = [lat, lng];
+                        webGeocodeCache[cacheKey] = coords;
+                        return coords;
+                    }
+                }
+            }
+            return null; // 패턴 매치 없음 (재시도 불필요)
+        } catch (e) {
+            if (attempt < maxRetries - 1) {
+                await new Promise(r => setTimeout(r, delay));
+                delay *= 2;
+            }
+        }
     }
+    return null;
+}
+
+// DuckDuckGo 웹검색 → 주소 추출 → Nominatim 지오코딩
+// 기존 naverLocalSearch + kakaoAddressSearch 조합을 대체
+async function webSearchAndGeocode(query) {
+    if (!query) return null;
+
+    // 캐시 확인
+    const cacheKey = 'wsg:' + query.trim();
+    if (webGeocodeCache[cacheKey]) return webGeocodeCache[cacheKey];
+
+    // 1단계: DuckDuckGo에서 주소 텍스트 추출
+    const webAddr = await webSearchAddress(query);
+    if (!webAddr) return null;
+
+    // 2단계: 추출된 주소를 Nominatim으로 지오코딩
+    await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit
+    const coords = await nominatimGeocode(webAddr);
+    if (coords) {
+        webGeocodeCache[cacheKey] = coords;
+    }
+    return coords;
 }
 
 // DuckDuckGo 웹검색 — 지번주소 추출용 (API 키 불필요, 로컬 검색 실패 시 폴백)
@@ -232,7 +311,8 @@ const AREA_CODE_TO_FULL_SIDO = {
     "경남": "경상남도", "제주": "제주특별자치도",
 };
 
-// 5단계 Kakao 지오코딩: 괄호주소 → 정제주소 → 시군구+동 → 시도+단지명 → 단지명 → 시군구만(최후 수단)
+// 5단계 지오코딩 (Nominatim + DuckDuckGo, API 키 불필요)
+// 괄호주소 → Nominatim 주소검색 → Nominatim 시군구+동 → DuckDuckGo 좌표 직접 → DuckDuckGo→Nominatim → Nominatim 시군구만
 async function geocodeAddress(address, houseName, item) {
     if (!address) return null;
 
@@ -244,8 +324,6 @@ async function geocodeAddress(address, houseName, item) {
         .replace(/전북자치도/g, '전북특별자치도');
 
     // === 0단계: 괄호 안에 완전한 주소가 있으면 우선 사용 ===
-    // "인천 검단신도시 AB13블록 (인천광역시 서구 원당동 1063-2 일원)"
-    // → 괄호 안의 "인천광역시 서구 원당동 1063-2" 사용
     const fullAddrInParen = address.match(
         /\(([^)]*(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청|전라|전북|경상|제주)[^)]*(?:시|도|구|군)[^)]*[동읍면리][^)]*)\)/
     );
@@ -254,97 +332,97 @@ async function geocodeAddress(address, houseName, item) {
         baseAddress = fullAddrInParen[1].trim();
     }
 
-    // === 1단계: 정제 후 Kakao 주소 검색 ===
+    // === 주소 정제 ===
     let cleaned = baseAddress;
-    // 괄호에서 동 이름 추출 후 괄호 제거
     const dongInParen = cleaned.match(/\(([가-힣]+[동읍면리])\)/);
     const dongFromParen = dongInParen ? dongInParen[1] : null;
     cleaned = cleaned.replace(/\([^)]*\)/g, '').trim();
 
-    // 블록/BL 패턴 제거 (순서 중요: 넓은 패턴부터)
     cleaned = cleaned
         .replace(/\s*[A-Za-z]*-?\d*[A-Za-z]*블[럭록]/gi, '')
         .replace(/\s*[A-Za-z]{0,3}-?\d{0,3}BL\b/gi, '')
-        // 신도시/지구/택지 제거
         .replace(/[가-힣]+신도시/g, '')
         .replace(/[가-힣]+도시개발사업/g, '')
         .replace(/[가-힣]*택지개발[가-힣]*/g, '')
         .replace(/[가-힣]*공공주택지구/g, '')
         .replace(/행정중심복합도시/g, '')
         .replace(/\d+-?\d*생활권/g, '')
-        // 지구명 패턴 제거 (예: "동탄2지구", "세교2지구", "장항지구")
         .replace(/[가-힣]+\d*지구/g, '')
-        // 기타 개발사업 관련 패턴
         .replace(/[가-힣]*뉴타운/g, '')
         .replace(/공동주택용지/g, '')
         .replace(/공급촉진지구/g, '')
         .replace(/도시개발구역/g, '')
         .replace(/\s+내\s+/g, ' ')
-        // 번지/일원/필지 정리
         .replace(/\s+\d+(-\d+)?번지.*$/g, '')
         .replace(/\s+일원.*$/g, '')
         .replace(/\s+외\s+\d+필지.*$/g, '')
         .replace(/\s+일대.*$/g, '')
-        // 연속 공백 정리
         .replace(/\s+/g, ' ').trim();
 
-    // 정제 후 동이 사라졌으면 괄호에서 추출한 동 추가
     if (dongFromParen && !/[가-힣]+[동읍면리]/.test(cleaned)) {
         cleaned = `${cleaned} ${dongFromParen}`;
     }
 
-    if (cleaned.length >= 5) {
-        let result = await kakaoAddressSearch(cleaned);
-        if (result) return result;
+    const isBlockAddress = isIrregularAddress(address);
+
+    // 블록형 주소: DuckDuckGo 좌표 직접 추출 우선
+    if (isBlockAddress && houseName) {
+        // 1차: DuckDuckGo 좌표 직접 추출
+        let result = await webSearchCoordinates(houseName + ' 아파트 위치');
+        if (result && validateCoordinates(result, item)) return result;
+        await new Promise(r => setTimeout(r, 2000));
+
+        // 2차: DuckDuckGo 주소 추출 → Nominatim
+        result = await webSearchAndGeocode(houseName + ' 아파트 주소');
+        if (result && validateCoordinates(result, item)) return result;
+        await new Promise(r => setTimeout(r, 1100));
+
+        // 3차: 시도+단지명 Nominatim
+        if (item && item.SUBSCRPT_AREA_CODE_NM) {
+            const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+            const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+            if (fullSido) {
+                result = await nominatimGeocode(fullSido + ' ' + houseName);
+                if (result && validateCoordinates(result, item)) return result;
+                await new Promise(r => setTimeout(r, 1100));
+            }
+        }
+        // 모든 시도 실패 → Stage 5(시군구 중심점)로 fall through
     }
 
-    // === 2단계: 시도+시군구+동 추출 (원본 주소 전체에서) ===
+    // === 1단계: Nominatim 주소 검색 (정제된 주소) ===
+    if (!isBlockAddress && cleaned.length >= 5) {
+        let result = await nominatimGeocode(cleaned);
+        if (result) return result;
+        await new Promise(r => setTimeout(r, 1100));
+    }
+
+    // === 2단계: 시도+시군구+동 추출 → Nominatim ===
     const distMatch = address.match(/((?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s+\S+[시군구](?:\s+\S+[구])?\s+\S+[동읍면리])/);
     if (distMatch) {
-        let result = await kakaoAddressSearch(distMatch[1]);
+        let result = await nominatimGeocode(distMatch[1]);
         if (result) return result;
+        await new Promise(r => setTimeout(r, 1100));
     }
 
-    // === 2.5단계: SUBSCRPT_AREA_CODE_NM + 단지명으로 키워드 검색 ===
-    // 주소에 시도 정보가 없는 경우 (예: "장항지구 A-5블록", "안심뉴타운 B3BL")
-    if (item && item.SUBSCRPT_AREA_CODE_NM && houseName) {
-        const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
-        const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
-        if (fullSido) {
-            let result = await kakaoKeywordSearch(`${fullSido} ${houseName}`);
-            if (result) return result;
-        }
-    }
-
-    // === 3단계: 단지명 키워드 검색 ===
+    // === 3단계: DuckDuckGo 좌표 직접 추출 ("단지명 아파트 위치") ===
     if (houseName) {
-        let result = await kakaoKeywordSearch(houseName);
-        if (result) return result;
+        let result = await webSearchCoordinates(houseName + ' 아파트 위치');
+        if (result && validateCoordinates(result, item)) return result;
+        await new Promise(r => setTimeout(r, 2000));
     }
 
-    // === 3.5단계: Naver 로컬 검색으로 도로명주소 찾기 → Kakao 지오코딩 ===
+    // === 4단계: DuckDuckGo 주소 추출 → Nominatim ===
     if (houseName) {
-        const naverAddr = await naverLocalSearch(houseName + ' 아파트');
-        if (naverAddr) {
-            let result = await kakaoAddressSearch(naverAddr);
-            if (result && validateCoordinates(result, item)) return result;
-        }
+        let result = await webSearchAndGeocode(houseName + ' 아파트');
+        if (result && validateCoordinates(result, item)) return result;
+        await new Promise(r => setTimeout(r, 1100));
     }
 
-    // === 3.7단계: Naver 웹검색으로 지번주소 추출 → Kakao 지오코딩 ===
-    if (houseName) {
-        const webAddr = await webSearchAddress(houseName + ' 아파트');
-        if (webAddr) {
-            let result = await kakaoAddressSearch(webAddr);
-            if (result && validateCoordinates(result, item)) return result;
-        }
-    }
-
-    // === 4단계: 시도+시군구만으로 검색 (최후 수단 — 시군구 중심점 폴백) ===
-    // 정확도가 가장 낮으므로 단지명 키워드 검색 이후에 시도
+    // === 5단계: 시도+시군구만으로 Nominatim 검색 (최후 수단 — 시군구 중심점 폴백) ===
     const sigunguMatch = address.match(/((?:서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시|세종특별자치시|경기도|강원특별자치도|강원도|충청북도|충청남도|전라북도|전북특별자치도|전라남도|경상북도|경상남도|제주특별자치도)\s+\S+[시군구](?:\s+\S+[구])?)/);
     if (sigunguMatch) {
-        let result = await kakaoAddressSearch(sigunguMatch[1]);
+        let result = await nominatimGeocode(sigunguMatch[1]);
         if (result) return result;
     }
 
@@ -359,12 +437,7 @@ async function geocodeMissingItems(lists) {
         return 0;
     }
 
-    if (!KAKAO_REST_API_KEY) {
-        console.log('⚠️ KAKAO_REST_API_KEY 미설정 — 좌표 변환 건너뜀');
-        return 0;
-    }
-
-    console.log(`📍 좌표 미보유 ${missing.length}건 Kakao 지오코딩 시작...`);
+    console.log(`📍 좌표 미보유 ${missing.length}건 Nominatim/웹검색 지오코딩 시작...`);
     let success = 0;
     let rejected = 0;
 
@@ -379,14 +452,16 @@ async function geocodeMissingItems(lists) {
             rejected++;
         }
 
-        if ((i + 1) % 50 === 0) {
+        if ((i + 1) % 20 === 0) {
             console.log(`  진행: ${i + 1}/${missing.length} (성공: ${success}, 검증실패: ${rejected})`);
+            saveWebGeocodeCache(); // 중간 저장
         }
 
-        // Kakao API rate limit 안전 마진
-        await new Promise(resolve => setTimeout(resolve, 120));
+        // Nominatim rate limit (초당 1건)
+        await new Promise(resolve => setTimeout(resolve, 1100));
     }
 
+    saveWebGeocodeCache();
     console.log(`✅ 좌표 변환 완료: ${success}/${missing.length}건 성공${rejected > 0 ? `, ${rejected}건 검증실패` : ''}`);
     return success;
 }
@@ -422,74 +497,42 @@ function jitterCoordinate(center, index, total) {
     ];
 }
 
-// 클러스터 항목 재지오코딩: Kakao "단지명 아파트" 키워드 검색
+// 클러스터 항목 재지오코딩: Nominatim + DuckDuckGo 웹검색
 async function resolveClusterItem(item, clusterCenter) {
     const houseName = item.HOUSE_NM;
     if (!houseName) return null;
 
-    // 단계 1: "단지명 아파트" 키워드 검색 (아파트 카테고리 우선)
-    let coords = await kakaoKeywordSearch(houseName + ' 아파트');
+    // 단계 1: DuckDuckGo 좌표 직접 추출
+    let coords = await webSearchCoordinates(houseName + ' 아파트 위치');
     if (coords && isValidClusterFix(coords, clusterCenter, item)) return coords;
-    await new Promise(resolve => setTimeout(resolve, 120));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // 단계 2: "시도 단지명 아파트" 키워드 검색
+    // 단계 2: DuckDuckGo 주소 추출 → Nominatim 지오코딩
+    coords = await webSearchAndGeocode(houseName + ' 아파트 주소');
+    if (coords && isValidClusterFix(coords, clusterCenter, item)) {
+        console.log(`    🔍 웹검색→Nominatim 성공: ${houseName}`);
+        return coords;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1100));
+
+    // 단계 3: Nominatim 직접 검색 (시도+단지명)
     const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
     const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
     if (fullSido) {
-        coords = await kakaoKeywordSearch(fullSido + ' ' + houseName + ' 아파트');
+        coords = await nominatimGeocode(fullSido + ' ' + houseName + ' 아파트');
         if (coords && isValidClusterFix(coords, clusterCenter, item)) return coords;
-        await new Promise(resolve => setTimeout(resolve, 120));
+        await new Promise(resolve => setTimeout(resolve, 1100));
     }
 
-    // 단계 3: 단지명만 키워드 검색
-    coords = await kakaoKeywordSearch(houseName);
+    // 단계 4: Nominatim 단지명만
+    coords = await nominatimGeocode(houseName + ' 아파트');
     if (coords && isValidClusterFix(coords, clusterCenter, item)) return coords;
-
-    // === 단계 4: Naver 로컬 검색으로 도로명주소 찾기 → Kakao 지오코딩 ===
-    await new Promise(resolve => setTimeout(resolve, 200));
-    let foundAddress = await naverLocalSearch(houseName + ' 아파트');
-    if (foundAddress) {
-        coords = await kakaoAddressSearch(foundAddress);
-        if (coords && isValidClusterFix(coords, clusterCenter, item)) {
-            console.log(`    🌐 Naver 검색 성공: ${houseName} → "${foundAddress}"`);
-            return coords;
-        }
-    }
-
-    // 단계 4-2: "시도 단지명 아파트" Naver 검색
-    if (fullSido) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        foundAddress = await naverLocalSearch(fullSido + ' ' + houseName + ' 아파트');
-        if (foundAddress) {
-            coords = await kakaoAddressSearch(foundAddress);
-            if (coords && isValidClusterFix(coords, clusterCenter, item)) {
-                console.log(`    🌐 Naver 검색 성공: ${houseName} → "${foundAddress}"`);
-                return coords;
-            }
-        }
-    }
-
-    // === 단계 5: Naver 웹검색으로 지번주소 추출 → Kakao 지오코딩 ===
-    await new Promise(resolve => setTimeout(resolve, 200));
-    foundAddress = await webSearchAddress(houseName + ' 아파트');
-    if (foundAddress) {
-        coords = await kakaoAddressSearch(foundAddress);
-        if (coords && isValidClusterFix(coords, clusterCenter, item)) {
-            console.log(`    🔍 웹검색 성공: ${houseName} → "${foundAddress}"`);
-            return coords;
-        }
-    }
 
     return null;
 }
 
 // 기존 좌표의 시도 불일치 검사 및 중복 좌표 클러스터 감지 후 재지오코딩
 async function fixInvalidCoordinates(lists) {
-    if (!KAKAO_REST_API_KEY) {
-        console.log('⚠️ KAKAO_REST_API_KEY 미설정 — 좌표 검증 건너뜀');
-        return 0;
-    }
-
     let totalFixed = 0;
 
     // === 1단계: 시도 범위 불일치 의심 항목 재지오코딩 (기존 로직 유지) ===
@@ -597,146 +640,254 @@ function isIrregularAddress(addr) {
 
 // auditIrregularAddresses는 fullCoordinateAudit/verifyNewCoordinates로 대체됨
 
-// 좌표 전수 감사: 모든 좌표 보유 항목에 대해 Kakao 키워드 검색으로 교차 검증
+// 좌표 전수 감사: 모든 좌표 보유 항목에 대해 DuckDuckGo/Nominatim으로 교차 검증
 async function fullCoordinateAudit(lists) {
-    if (!KAKAO_REST_API_KEY) return 0;
-
     const targets = lists.filter(i => i.coordinates && i.HOUSE_NM);
     if (targets.length === 0) return 0;
 
-    const BATCH_SIZE = 10; // Kakao API 초당 10건 제한 고려
-    const BATCH_DELAY = 150; // 배치 간 대기(ms)
-    console.log(`🔎 좌표 전수 감사: ${targets.length}건 교차 검증 시작 (배치 ${BATCH_SIZE}건)...`);
+    // 웹검색 기반이므로 워커 2개, 딜레이 길게
+    const WORKER_COUNT = 2;
+    const WORKER_BATCH = 3;
+    const WORKER_DELAY = 2500;
+
+    console.log(`🔎 좌표 전수 감사: ${targets.length}건 교차 검증 시작 (${WORKER_COUNT}워커, Nominatim+DuckDuckGo)...`);
     let fixed = 0;
     let checked = 0;
 
-    for (let batch = 0; batch < targets.length; batch += BATCH_SIZE) {
-        const chunk = targets.slice(batch, batch + BATCH_SIZE);
-        const results = await Promise.allSettled(chunk.map(async (item) => {
-            const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
+    const chunks = Array.from({ length: WORKER_COUNT }, (_, i) =>
+        targets.filter((_, idx) => idx % WORKER_COUNT === i)
+    );
 
-            // 1차: Kakao 키워드 검색 "단지명 아파트"
-            let correctCoords = await kakaoKeywordSearch(houseName + ' 아파트');
+    async function auditItem(item) {
+        const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
 
-            // 2차: 시도+단지명 키워드 검색
-            if (!correctCoords && item.SUBSCRPT_AREA_CODE_NM) {
-                const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
-                const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
-                if (fullSido) {
-                    correctCoords = await kakaoKeywordSearch(fullSido + ' ' + houseName);
-                }
-            }
+        // 1차: DuckDuckGo 좌표 직접 추출
+        let correctCoords = await webSearchCoordinates(houseName + ' 아파트 위치');
 
-            // 3차: 웹검색 폴백
-            if (!correctCoords) {
-                const webAddr = await webSearchAddress(houseName + ' 아파트');
-                if (webAddr) correctCoords = await kakaoAddressSearch(webAddr);
-            }
-
-            if (!correctCoords) return null;
-
-            const dist = haversineDistance(
-                item.coordinates[0], item.coordinates[1],
-                correctCoords[0], correctCoords[1]
-            );
-
-            // 500m 이상 차이나면 수정 (동 대표점 vs 실제 위치 차이)
-            if (dist > 0.5) {
-                return { item, correctCoords, dist, houseName };
-            }
-            return null;
-        }));
-
-        for (const r of results) {
-            if (r.status === 'fulfilled' && r.value) {
-                const { item, correctCoords, dist, houseName } = r.value;
-                console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
-                item.coordinates = correctCoords;
-                fixed++;
-            }
-        }
-        checked += chunk.length;
-
-        // 진행률 로그 (200건마다)
-        if (checked % 200 < BATCH_SIZE) {
-            console.log(`  📊 진행: ${checked}/${targets.length} (수정 ${fixed}건)`);
+        // 2차: DuckDuckGo 주소 추출 → Nominatim
+        if (!correctCoords) {
+            await new Promise(r => setTimeout(r, 2000));
+            correctCoords = await webSearchAndGeocode(houseName + ' 아파트');
         }
 
-        await new Promise(r => setTimeout(r, BATCH_DELAY));
+        // 3차: Nominatim 직접 (시도+단지명)
+        if (!correctCoords && item.SUBSCRPT_AREA_CODE_NM) {
+            await new Promise(r => setTimeout(r, 1100));
+            const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+            const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+            if (fullSido) {
+                correctCoords = await nominatimGeocode(fullSido + ' ' + houseName + ' 아파트');
+            }
+        }
+
+        if (!correctCoords) return null;
+
+        const dist = haversineDistance(
+            item.coordinates[0], item.coordinates[1],
+            correctCoords[0], correctCoords[1]
+        );
+
+        if (dist > 0.5) {
+            return { item, correctCoords, dist, houseName };
+        }
+        return null;
     }
 
+    async function worker(workerTargets) {
+        let workerFixed = 0;
+        let workerChecked = 0;
+        for (let i = 0; i < workerTargets.length; i += WORKER_BATCH) {
+            const batch = workerTargets.slice(i, i + WORKER_BATCH);
+            const results = await Promise.allSettled(batch.map(auditItem));
+
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value) {
+                    const { item, correctCoords, dist, houseName } = r.value;
+                    console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
+                    item.coordinates = correctCoords;
+                    workerFixed++;
+                }
+            }
+            workerChecked += batch.length;
+            saveWebGeocodeCache(); // 중간 저장
+            await new Promise(r => setTimeout(r, WORKER_DELAY));
+        }
+        return { fixed: workerFixed, checked: workerChecked };
+    }
+
+    const workerResults = await Promise.all(
+        chunks.map((chunk) => worker(chunk))
+    );
+    fixed = workerResults.reduce((sum, r) => sum + r.fixed, 0);
+    checked = workerResults.reduce((sum, r) => sum + r.checked, 0);
+
+    saveWebGeocodeCache();
     console.log(`✅ 전수 감사 완료: ${checked}건 검증, ${fixed}건 수정`);
     return fixed;
 }
 
-// 새로 지오코딩된 항목의 좌표를 키워드 검색으로 교차 검증
+// 새로 지오코딩된 항목의 좌표를 DuckDuckGo/Nominatim으로 교차 검증
 async function verifyNewCoordinates(lists, newlyGeocodedKeys) {
-    if (!KAKAO_REST_API_KEY) return 0;
-
-    // newlyGeocodedKeys가 없으면 비정형 주소만 검증 (기존 auditIrregularAddresses 동작 유지)
+    // newlyGeocodedKeys가 없으면 비정형 주소만 검증
     const targets = newlyGeocodedKeys
         ? lists.filter(i => newlyGeocodedKeys.has(`${i.HOUSE_MANAGE_NO}_${i.PBLANC_NO}`))
         : lists.filter(i => i.HSSPLY_ADRES && i.coordinates && isIrregularAddress(i.HSSPLY_ADRES));
 
     if (targets.length === 0) return 0;
 
-    console.log(`🔎 신규/비정형 좌표 ${targets.length}건 교차 검증...`);
+    const WORKER_COUNT = 2;
+    const WORKER_BATCH = 3;
+    const WORKER_DELAY = 2500;
+
+    console.log(`🔎 신규/비정형 좌표 ${targets.length}건 교차 검증 (${WORKER_COUNT}워커, Nominatim+DuckDuckGo)...`);
     let fixed = 0;
 
-    for (let batch = 0; batch < targets.length; batch += 10) {
-        const chunk = targets.slice(batch, batch + 10);
-        const results = await Promise.allSettled(chunk.map(async (item) => {
-            const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
+    const chunks = Array.from({ length: WORKER_COUNT }, (_, i) =>
+        targets.filter((_, idx) => idx % WORKER_COUNT === i)
+    );
 
-            // 1차: Kakao 키워드 검색 "단지명 아파트"
-            let correctCoords = await kakaoKeywordSearch(houseName + ' 아파트');
+    async function verifyItem(item) {
+        const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
 
-            // 2차: 시도+단지명 키워드 검색
-            if (!correctCoords && item.SUBSCRPT_AREA_CODE_NM) {
-                const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
-                const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
-                if (fullSido) {
-                    correctCoords = await kakaoKeywordSearch(fullSido + ' ' + houseName);
-                }
-            }
+        // 1차: DuckDuckGo 좌표 직접 추출
+        let correctCoords = await webSearchCoordinates(houseName + ' 아파트 위치');
 
-            // 3차: 웹검색 폴백
-            if (!correctCoords) {
-                const webAddr = await webSearchAddress(houseName + ' 아파트');
-                if (webAddr) correctCoords = await kakaoAddressSearch(webAddr);
-            }
-
-            if (!correctCoords) return null;
-
-            const dist = haversineDistance(
-                item.coordinates[0], item.coordinates[1],
-                correctCoords[0], correctCoords[1]
-            );
-
-            // 500m 이상 차이나면 수정
-            if (dist > 0.5) {
-                return { item, correctCoords, dist, houseName };
-            }
-            return null;
-        }));
-
-        for (const r of results) {
-            if (r.status === 'fulfilled' && r.value) {
-                const { item, correctCoords, dist, houseName } = r.value;
-                console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
-                item.coordinates = correctCoords;
-                fixed++;
-            }
+        // 2차: DuckDuckGo 주소 추출 → Nominatim
+        if (!correctCoords) {
+            await new Promise(r => setTimeout(r, 2000));
+            correctCoords = await webSearchAndGeocode(houseName + ' 아파트');
         }
 
-        await new Promise(r => setTimeout(r, 150));
+        if (!correctCoords) return null;
+
+        const dist = haversineDistance(
+            item.coordinates[0], item.coordinates[1],
+            correctCoords[0], correctCoords[1]
+        );
+
+        const threshold = isIrregularAddress(item.HSSPLY_ADRES) ? 0.3 : 0.5;
+        if (dist > threshold) {
+            return { item, correctCoords, dist, houseName };
+        }
+        return null;
     }
 
+    async function worker(workerTargets, workerId) {
+        let workerFixed = 0;
+        for (let i = 0; i < workerTargets.length; i += WORKER_BATCH) {
+            const batch = workerTargets.slice(i, i + WORKER_BATCH);
+            const results = await Promise.allSettled(batch.map(verifyItem));
+
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value) {
+                    const { item, correctCoords, dist, houseName } = r.value;
+                    console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
+                    item.coordinates = correctCoords;
+                    workerFixed++;
+                }
+            }
+            saveWebGeocodeCache();
+            await new Promise(r => setTimeout(r, WORKER_DELAY));
+        }
+        return workerFixed;
+    }
+
+    const workerResults = await Promise.all(
+        chunks.map((chunk, i) => worker(chunk, i))
+    );
+    fixed = workerResults.reduce((sum, n) => sum + n, 0);
+
+    saveWebGeocodeCache();
     if (fixed > 0) {
         console.log(`✅ 교차 검증 수정: ${fixed}건`);
     } else {
         console.log(`✅ 교차 검증 통과`);
     }
+    return fixed;
+}
+
+// 블록형 주소(BL/신도시) 좌표 일괄 보정
+async function fixBlockAddressCoordinates(lists) {
+    const targets = lists.filter(i =>
+        i.coordinates && i.HOUSE_NM && i.HSSPLY_ADRES &&
+        isIrregularAddress(i.HSSPLY_ADRES)
+    );
+    if (targets.length === 0) return 0;
+
+    const WORKER_COUNT = 2;
+    const WORKER_BATCH = 3;
+    const WORKER_DELAY = 2500;
+
+    console.log(`🏗️ 블록형 주소 좌표 보정: ${targets.length}건 (${WORKER_COUNT}워커, DuckDuckGo 우선)...`);
+    let fixed = 0;
+
+    const chunks = Array.from({ length: WORKER_COUNT }, (_, i) =>
+        targets.filter((_, idx) => idx % WORKER_COUNT === i)
+    );
+
+    async function blockVerifyItem(item) {
+        const houseName = item.HOUSE_NM.replace(/\(.*\)/, '').trim();
+
+        // 1차: DuckDuckGo 좌표 직접 추출
+        let correctCoords = await webSearchCoordinates(houseName + ' 아파트 위치');
+
+        // 2차: DuckDuckGo 주소 추출 → Nominatim
+        if (!correctCoords) {
+            await new Promise(r => setTimeout(r, 2000));
+            correctCoords = await webSearchAndGeocode(houseName + ' 아파트 주소');
+        }
+
+        // 3차: Nominatim 시도+단지명
+        if (!correctCoords && item.SUBSCRPT_AREA_CODE_NM) {
+            await new Promise(r => setTimeout(r, 1100));
+            const areaCode = normalizeSido(item.SUBSCRPT_AREA_CODE_NM);
+            const fullSido = areaCode ? (AREA_CODE_TO_FULL_SIDO[areaCode] || '') : '';
+            if (fullSido) {
+                correctCoords = await nominatimGeocode(fullSido + ' ' + houseName + ' 아파트');
+            }
+        }
+
+        if (!correctCoords) return null;
+        if (!validateCoordinates(correctCoords, item)) return null;
+
+        const dist = haversineDistance(
+            item.coordinates[0], item.coordinates[1],
+            correctCoords[0], correctCoords[1]
+        );
+
+        if (dist > 0.3) {
+            return { item, correctCoords, dist, houseName };
+        }
+        return null;
+    }
+
+    async function worker(workerTargets) {
+        let workerFixed = 0;
+        for (let i = 0; i < workerTargets.length; i += WORKER_BATCH) {
+            const batch = workerTargets.slice(i, i + WORKER_BATCH);
+            const results = await Promise.allSettled(batch.map(blockVerifyItem));
+
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value) {
+                    const { item, correctCoords, dist, houseName } = r.value;
+                    console.log(`  ✅ ${houseName}: ${dist.toFixed(1)}km 보정`);
+                    item.coordinates = correctCoords;
+                    workerFixed++;
+                }
+            }
+            saveWebGeocodeCache();
+            await new Promise(r => setTimeout(r, WORKER_DELAY));
+        }
+        return workerFixed;
+    }
+
+    const workerResults = await Promise.all(
+        chunks.map((chunk) => worker(chunk))
+    );
+    fixed = workerResults.reduce((sum, n) => sum + n, 0);
+
+    saveWebGeocodeCache();
+    console.log(`✅ 블록형 주소 보정 완료: ${fixed}건 수정`);
     return fixed;
 }
 
@@ -1266,6 +1417,30 @@ function syncCalculatedStatsFromDetailCache(existingStats) {
     return backfilled;
 }
 
+// 좌표 검증 스킵 로직: 마지막 검증 후 일정 시간 내면 건너뛰기
+const COORD_VERIFY_FILE = path.join(DATA_DIR, '.last-coord-verify');
+const COORD_VERIFY_INTERVAL_HOURS = 24;
+
+function shouldSkipCoordVerify() {
+    try {
+        if (fs.existsSync(COORD_VERIFY_FILE)) {
+            const lastVerify = new Date(fs.readFileSync(COORD_VERIFY_FILE, 'utf-8').trim());
+            const hoursSince = (Date.now() - lastVerify.getTime()) / (1000 * 60 * 60);
+            if (hoursSince < COORD_VERIFY_INTERVAL_HOURS) {
+                console.log(`📍 좌표 검증 스킵 (${hoursSince.toFixed(1)}시간 전 완료, ${COORD_VERIFY_INTERVAL_HOURS}시간 간격)`);
+                return true;
+            }
+        }
+    } catch (e) {}
+    return false;
+}
+
+function markCoordVerifyDone() {
+    try {
+        fs.writeFileSync(COORD_VERIFY_FILE, new Date().toISOString(), 'utf-8');
+    } catch (e) {}
+}
+
 // 메인 함수
 async function main() {
     console.log('🚀 청약경쟁률 대시보드 - 정적 캐시 생성 시스템');
@@ -1276,19 +1451,24 @@ async function main() {
         process.exit(1);
     }
 
+    // 웹 지오코딩 캐시 로드
+    loadWebGeocodeCache();
+
     const isBackfill = process.argv.includes('--backfill');
     const isFixCoords = process.argv.includes('--fix-coords');
     const isAuditCoords = process.argv.includes('--audit-coords');
+    const isQuick = process.argv.includes('--quick');
 
     // 1. 기존 캐시 로드
     const existingCache = loadExistingCache();
     const lastDate = isBackfill ? '2020-01-01' : getLastAnnouncementDate(existingCache);
-    console.log(`📅 ${isBackfill ? '[백필 모드] ' : ''}${isFixCoords ? '[좌표수정 모드] ' : ''}${isAuditCoords ? '[전수감사 모드] ' : ''}마지막 캐시 공고일: ${lastDate}`);
+    console.log(`📅 ${isBackfill ? '[백필 모드] ' : ''}${isFixCoords ? '[좌표수정 모드] ' : ''}${isAuditCoords ? '[전수감사 모드] ' : ''}${isQuick ? '[빠른 모드] ' : ''}마지막 캐시 공고일: ${lastDate}`);
 
     // 전수 감사 모드: 모든 좌표 보유 항목을 Kakao 키워드 검색으로 교차 검증
     if (isAuditCoords && existingCache?.lists) {
         const auditFixed = await fullCoordinateAudit(existingCache.lists);
-        if (auditFixed > 0) {
+        const blockFixed = await fixBlockAddressCoordinates(existingCache.lists);
+        if (auditFixed > 0 || blockFixed > 0) {
             saveCache(existingCache);
         }
         if (!isFixCoords && !isBackfill) {
@@ -1319,11 +1499,32 @@ async function main() {
 
     if (newItems.length === 0) {
         console.log('✅ 새로운 공고가 없습니다.');
-        // 하지만 상세 파일 생성을 위해 최근 항목들을 다시 체크할 수 있습니다.
-        // 여기서는 일단 종료
-        // process.exit(0);
     } else {
         console.log(`📋 새 공고 ${newItems.length}건 발견`);
+    }
+
+    // --quick 모드: 새 공고 병합만 하고 상세 데이터/좌표 검증은 건너뜀
+    if (isQuick) {
+        if (newItems.length > 0) {
+            const existingIds = new Set((existingCache?.lists || []).map(item => `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`));
+            const uniqueNewItems = newItems.filter(item => !existingIds.has(`${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`));
+            if (uniqueNewItems.length > 0) {
+                const mergedLists = [...(existingCache?.lists || []), ...uniqueNewItems];
+                const quickCache = {
+                    lists: mergedLists,
+                    calculatedStats: existingCache?.calculatedStats || {},
+                    metadata: {
+                        ...existingCache?.metadata,
+                        generatedAt: new Date().toISOString(),
+                        totalCount: mergedLists.length
+                    }
+                };
+                saveCache(quickCache);
+                console.log(`⚡ 빠른 모드: ${uniqueNewItems.length}건 신규 공고 병합 완료`);
+            }
+        }
+        console.log('⚡ 빠른 모드 완료 (상세 데이터/좌표 검증 생략)');
+        return;
     }
 
     // 3. 상세 데이터 수집 (결과 발표된 것만)
@@ -1421,9 +1622,23 @@ async function main() {
         const mergedLists = [...(existingCache?.lists || []), ...uniqueNewItems];
 
         // 좌표 없는 항목 지오코딩
-        await geocodeMissingItems(mergedLists);
-        // 신규/비정형 좌표 교차 검증
-        await verifyNewCoordinates(mergedLists);
+        const newlyGeocodedKeys = new Set();
+        const geocodedCount = await geocodeMissingItems(mergedLists);
+        if (geocodedCount > 0) {
+            // 신규 지오코딩된 항목의 키를 추적
+            mergedLists.forEach(item => {
+                if (item.coordinates && uniqueNewItems.some(ni =>
+                    ni.HOUSE_MANAGE_NO === item.HOUSE_MANAGE_NO && ni.PBLANC_NO === item.PBLANC_NO
+                )) {
+                    newlyGeocodedKeys.add(`${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}`);
+                }
+            });
+        }
+        // 신규 항목만 교차 검증 (전체 비정형 주소 스캔 X)
+        if (!isQuick && newlyGeocodedKeys.size > 0) {
+            await verifyNewCoordinates(mergedLists, newlyGeocodedKeys);
+        }
+        // 블록형 주소 전체 보정은 --audit-coords에서만 실행 (일상 실행 제외)
 
         const actualStartDate = mergedLists.reduce((min, item) => {
             const d = item.RCRIT_PBLANC_DE || '';
@@ -1455,8 +1670,7 @@ async function main() {
 
         // 좌표 없는 항목 지오코딩
         await geocodeMissingItems(mergedLists);
-        // 신규/비정형 좌표 교차 검증
-        await verifyNewCoordinates(mergedLists);
+        // 일상 실행: 좌표 교차 검증/블록형 보정은 --audit-coords에서만
 
         const updatedCache = {
             ...existingCache,
@@ -1471,9 +1685,8 @@ async function main() {
         // 새 공고도 없고 상세 업데이트도 없지만, 좌표 미보유 항목 체크
         const lists = existingCache?.lists || [];
         const geocoded = await geocodeMissingItems(lists);
-        // 신규/비정형 좌표 교차 검증
-        const audited = await verifyNewCoordinates(lists);
-        if (geocoded > 0 || audited > 0) {
+        // 일상 실행: 전체 비정형 주소 검증은 건너뜀 (--audit-coords에서만)
+        if (geocoded > 0) {
             saveCache({ ...existingCache, lists });
         }
     }
@@ -1486,11 +1699,15 @@ async function main() {
         console.log(`📊 calculatedStats 커버리지: ${finalStats}/${totalLists} (${totalLists > 0 ? ((finalStats/totalLists)*100).toFixed(1) : 0}%)`);
     }
 
+    // 웹 지오코딩 캐시 최종 저장
+    saveWebGeocodeCache();
+
     console.log('='.repeat(50));
     console.log(`✅ 정적 캐시 생성 완료!`);
 }
 
 main().catch(error => {
+    saveWebGeocodeCache(); // 오류 시에도 캐시 저장
     console.error('❌ 자동 업데이트 실패:', error.message);
     // 업데이트 실패해도 서버는 계속 실행되도록 exit하지 않음
 });

@@ -1,5 +1,9 @@
 /**
- * Kakao REST API를 사용한 전체 좌표 재보정 스크립트
+ * @deprecated 이 스크립트는 Kakao API 의존성을 사용합니다.
+ * 대신 `node scripts/auto-update-cache.js --audit-coords` 를 사용하세요.
+ * (Nominatim + DuckDuckGo 기반, API 키 불필요)
+ *
+ * 원래 기능: Kakao REST API를 사용한 전체 좌표 재보정 스크립트
  * - 기존 좌표 유무와 관계없이 모든 항목의 주소를 정밀 지오코딩
  * - Kakao 주소 검색 → 키워드 검색 2단계 fallback
  * - 분당 약 60건 처리 (안전 마진 포함)

@@ -12,6 +12,8 @@ import { getCoordinates as getGeoCoordinates, Coordinates } from '@/lib/geo-coor
 import { getCompetitionStagesSync, getStageRequestTarget, getSupplyTotalForItem } from './utils';
 import { RateType } from './types';
 
+const USE_SQLITE = process.env.NEXT_PUBLIC_USE_SQLITE === 'true';
+
 export type RegionData = {
   key: string;
   coordinates: Coordinates;
@@ -42,9 +44,54 @@ export function useCompetitionMapStats(
   });
 
   useEffect(() => {
-    if (filteredData.length === 0) {
+    if (filteredData.length === 0 && !USE_SQLITE) {
       setAsyncRegionData([]);
       return;
+    }
+
+    if (USE_SQLITE) {
+      setProcessingStatus({ isProcessing: true, message: "서버에서 데이터 조회 중...", percent: 0 });
+
+      const params = new URLSearchParams({
+        rateType,
+        zoom: String(currentZoom),
+      });
+
+      fetch(`/api/apt/map-regions?${params}`)
+        .then(res => res.json())
+        .then(data => {
+          const regionArray: RegionData[] = data.items
+            .filter((item: any) => item.lat != null && item.lng != null)
+            .map((item: any) => {
+              const isIndividual = data.level === 'individual';
+              return {
+                key: isIndividual ? `${item.HOUSE_MANAGE_NO}_${item.PBLANC_NO}` : item.region,
+                coordinates: [item.lat, item.lng] as Coordinates,
+                items: isIndividual ? [{
+                  HOUSE_MANAGE_NO: item.HOUSE_MANAGE_NO,
+                  PBLANC_NO: item.PBLANC_NO,
+                  HOUSE_NM: item.HOUSE_NM,
+                  HSSPLY_ADRES: item.address,
+                  SUBSCRPT_AREA_CODE_NM: item.sido,
+                  TOT_SUPLY_HSHLDCO: item.supply,
+                  RCRIT_PBLANC_DE: item.rcritDate,
+                } as AptInfo] : [],
+                totalSupply: item.supply || 0,
+                avgRate: item.rate,
+                itemCount: isIndividual ? 1 : item.count,
+              };
+            });
+
+          setAsyncRegionData(regionArray);
+          setProcessingStatus({ isProcessing: false, message: "완료", percent: 100 });
+        })
+        .catch(err => {
+          console.error('[useCompetitionMapStats] SQLite API error:', err);
+          setAsyncRegionData([]);
+          setProcessingStatus({ isProcessing: false, message: "오류", percent: 0 });
+        });
+
+      return; // skip JSON mode logic
     }
 
     setProcessingStatus({
